@@ -59,14 +59,21 @@ $$;
 
 CREATE OR REPLACE VIEW reputation_tracker_app.deleted_comment_operation_view
  AS
- SELECT ((o.block_num::bigint << 36) | (o.trx_in_block::bigint << 20)) | (o.op_pos::bigint & '000011111111111111111111'::"bit"::bigint) AS id,
+ SELECT ((o.block_num::bigint << 36) | (case o.trx_in_block = -1
+                      when true then
+                        32768::bigint << 20
+                      else
+                        o.trx_in_block::bigint << 20
+                     end
+                     )
+     | (o.op_pos::bigint & '000011111111111111111111'::"bit"::bigint)) AS id,
     o.block_num,
     o.trx_in_block,
     o.op_pos,
     (o.body::jsonb -> 'value'::text) ->> 'author'::text AS author,
     (o.body::jsonb -> 'value'::text) ->> 'permlink'::text AS permlink
    FROM hive.reputation_tracker_app_operations_view o
-  WHERE o.op_type_id = 17;
+  WHERE o.op_type_id in (17, 61); -- include delete_comment_operation and comment_payout_update_operation
 
 create or replace view reputation_tracker_app.hive_reputation_data_view as
 select (CAST( o.block_num as BIGINT ) << 36
@@ -114,12 +121,18 @@ CREATE INDEX IF NOT EXISTS effective_comment_vote_idx ON hive.operations USING b
 
 --- This statement must be executed by haf_block_log database owner (haf_admin)
 CREATE INDEX IF NOT EXISTS delete_comment_op_idx ON hive.operations USING btree
-    (
+ (
    (body::jsonb -> 'value' ->> 'author'::text),
    (body::jsonb -> 'value' ->> 'permlink'::text),
-   (CAST( block_num as BIGINT ) << 36
-       | ( trx_in_block::BIGINT << 20 )
-       | ( op_pos::BIGINT & CAST( x'0FFFFF' as BIGINT) )) desc
+   ((block_num::bigint << 36)
+    | (case trx_in_block = -1
+      when true then
+        32768::bigint << 20
+      else
+        trx_in_block::bigint << 20
+    end
+    )
+    | (op_pos::bigint & '000011111111111111111111'::"bit"::bigint)) desc
   )
-    WHERE op_type_id = 17
+  WHERE op_type_id in (17, 61)
   ;
