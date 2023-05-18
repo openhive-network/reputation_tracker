@@ -64,6 +64,7 @@ AS
 $$
 DECLARE
   _last_block integer;
+  _final_block integer;
 BEGIN
   RAISE NOTICE 'Entering massive processing of block range: <%, %>...', _from, _to;
   RAISE NOTICE 'Detaching HAF application context...';
@@ -72,14 +73,18 @@ BEGIN
   --- You can do here also other things to speedup your app, i.e. disable constrains, remove indexes etc.
 
   _last_block := reputation_tracker_app.update_account_reputations(_from, _to, 1000);
+  COMMIT;
 
   IF reputation_tracker_app.continueProcessing() AND _last_block < _to THEN
-    RAISE NOTICE 'Attempting to process a block range (rest): <%, %>', _last_block, _to;
+    RAISE NOTICE 'Attempting to process a block range (rest): <%, %>', _last_block+1, _to;
     --- Supplement last part of range if anything left.
-    _last_block := reputation_tracker_app.update_account_reputations(_last_block, _to, 1000);
+    _final_block := reputation_tracker_app.update_account_reputations(_last_block+1, _to, 1000);
 
     COMMIT;
-    RAISE NOTICE 'Block range: <%, %> processed successfully.', _last_block, _to;
+    RAISE NOTICE 'Block range: <%, %> processed successfully.', _last_block+1, _to;
+
+    --- Update inout parameter
+    _last_block := _final_block;
   END IF;
 
   RAISE NOTICE 'Attaching HAF application context at block: %.', _last_block;
@@ -154,6 +159,7 @@ BEGIN
 
       IF __next_block_range.first_block != __next_block_range.last_block THEN
         CALL reputation_tracker_app.do_massive_processing(_appContext, __next_block_range.first_block, __next_block_range.last_block, 1000, __last_block);
+        raise notice 'Last block is: %', __last_block;
       ELSE
         CALL reputation_tracker_app.processBlock(__next_block_range.last_block);
         __last_block := __next_block_range.last_block;
