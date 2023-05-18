@@ -53,7 +53,11 @@ BEGIN
                    FROM reputation_tracker_app.hive_reputation_data_view prd
                    WHERE prd.author = rd.author AND prd.voter = rd.voter
                          AND prd.permlink = rd.permlink AND prd.id < rd.id
-                          ORDER BY prd.id DESC LIMIT 1), 0) AS prev_rshares
+                         --- warning previous votes targeting posts which have been next deleted (before voting again) must be ignored
+                         AND NOT EXISTS (SELECT NULL FROM reputation_tracker_app.deleted_comment_operation_view dp
+                                         WHERE dp.author = rd.author and dp.permlink = rd.permlink and dp.id between prd.id and rd.id)
+                   ORDER BY prd.id DESC LIMIT 1), 0
+          ) AS prev_rshares
         FROM reputation_tracker_app.hive_reputation_data_view rd
         WHERE (_first_block_num IS NULL AND _last_block_num IS NULL) OR (rd.block_num BETWEEN _first_block_num AND _last_block_num)
     )
@@ -190,7 +194,11 @@ BEGIN
                    FROM reputation_tracker_app.hive_reputation_data_view prd
                    WHERE prd.author = rd.author AND prd.voter = rd.voter
                          AND prd.permlink = rd.permlink AND prd.id < rd.id
-                          ORDER BY prd.id DESC LIMIT 1), 0) AS prev_rshares
+                         --- warning previous votes targeting posts which have been next deleted (before voting again) must be ignored
+                         AND NOT EXISTS (SELECT NULL FROM reputation_tracker_app.deleted_comment_operation_view dp
+                                         WHERE dp.author = rd.author and dp.permlink = rd.permlink and dp.id between prd.id and rd.id)
+                   ORDER BY prd.id DESC LIMIT 1), 0
+          ) AS prev_rshares
         FROM reputation_tracker_app.hive_reputation_data_view rd
         WHERE rd.block_num = _block_num
     )
