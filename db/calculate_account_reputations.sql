@@ -37,9 +37,8 @@ DECLARE
   __author_idx int;
   __voter_idx int;
   __last_reported_block int;
+  __first_vote_processed boolean := false;
 BEGIN
-  _tracked_account = 'roxianca';
-
   raise notice 'Gathering data to process block range: %, %', _first_block_num, _last_block_num;
 
   SELECT INTO __account_reputations ARRAY(SELECT ROW(a.account_id, a.reputation, a.is_implicit, false)::reputation_tracker_app.AccountReputation
@@ -49,7 +48,7 @@ BEGIN
   FOR __vote_data IN
     with source_data as materialized
     (
-    SELECT rd.id, rd.block_num, rd.author, rd.voter, rd.rshares,
+    SELECT rd.id, rd.block_num, rd.author, rd.permlink, rd.voter, rd.rshares,
           COALESCE((SELECT prd.rshares
                    FROM reputation_tracker_app.hive_reputation_data_view prd
                    WHERE prd.author = rd.author AND prd.voter = rd.voter
@@ -58,14 +57,15 @@ BEGIN
         FROM reputation_tracker_app.hive_reputation_data_view rd
         WHERE (_first_block_num IS NULL AND _last_block_num IS NULL) OR (rd.block_num BETWEEN _first_block_num AND _last_block_num)
     )
-    select s.id, s.block_num, s.author, ha.id as author_id, s.voter, hv.id as voter_id, s.rshares, s.prev_rshares
+    select s.id, s.block_num, s.author, s.permlink, ha.id as author_id, s.voter, hv.id as voter_id, s.rshares, s.prev_rshares
     from source_data s
     join hive.accounts_view ha on ha.name = s.author
     join hive.accounts_view hv on hv.name = s.voter
     ORDER BY s.id 
     LOOP
-      IF __vote_data.block_num = _first_block_num THEN
+      IF NOT __first_vote_processed THEN
         raise notice 'Data gathered. Starting block range processing...';
+        __first_vote_processed := True;
       END IF;
 
       IF __vote_data.block_num % _reporting_step = 0 AND __vote_data.block_num > __last_reported_block THEN
@@ -83,13 +83,6 @@ BEGIN
 
       __voter_rep := __account_reputations[__voter_idx].reputation;
       __implicit_author_rep := __account_reputations[__author_idx].is_implicit;
-    
-      IF __vote_data.author = _tracked_account THEN
-         raise notice 'Processing vote (voter: %) <%> rshares: %, prev_rshares: %', __vote_data.voter, __vote_data.id, __vote_data.rshares, __vote_data.prev_rshares;
-         raise notice 'Voter `%` (%) reputation: %', __vote_data.voter, __vote_data.voter_id,  __voter_rep;
-      END IF;
-
-      CONTINUE WHEN __voter_rep < 0;
 
       __implicit_voter_rep := __account_reputations[__voter_idx].is_implicit;
     
@@ -98,34 +91,50 @@ BEGIN
       __prev_rshares := __vote_data.prev_rshares;
       __prev_rep_delta := (__prev_rshares >> 6)::bigint;
 
-      IF NOT __implicit_author_rep AND --- Author must have set explicit reputation to allow its correction
+      raise notice 'Block: % - Preprocessing a vote: author: `%`, voter: `%` permlink: %', __vote_data.block_num-1, __vote_data.author, __vote_data.voter, __vote_data.permlink;
+
+      --- Author must have set explicit reputation to allow its correction
+      IF NOT __implicit_author_rep AND __prev_rshares != 0 THEN
+        raise notice 'Author `%` reputation (pre-correction): %', __vote_data.author, __author_rep;
+        raise notice 'Author `%` - Correcting a vote: (voter: `%`) rshares: %', __vote_data.author, __vote_data.voter, __vote_data.prev_rshares;
+        raise notice 'Author `%` - Voter `%` reputation: %', __vote_data.author, __vote_data.voter, __voter_rep;
+      END IF;
+    
+      --- Author must have set explicit reputation to allow its correction
+      IF NOT __implicit_author_rep AND __voter_rep >= 0 AND
          (__prev_rshares > 0 OR
           --- Voter must have explicitly set reputation to match hived old conditions
          (__prev_rshares < 0 AND NOT __implicit_voter_rep AND __voter_rep > __author_rep - __prev_rep_delta)) THEN
             __author_rep := __author_rep - __prev_rep_delta;
             __implicit_author_rep := __author_rep = 0;
+
             __account_reputations[__author_idx] := ROW(__vote_data.author_id, __author_rep, __implicit_author_rep, true)::reputation_tracker_app.AccountReputation;
-            IF __vote_data.author = _tracked_account THEN
-             raise notice 'Corrected author_rep by prev_rep_delta: % to have reputation: %', __prev_rep_delta, __author_rep;
+            
+            IF __implicit_author_rep THEN
+              raise notice 'Author `%` reputation (past-correction): implicit-0', __vote_data.author;
+            ELSE
+              raise notice 'Author `%` reputation (past-correction): %', __vote_data.author, __author_rep;
             END IF;
       END IF;
 
       __implicit_voter_rep := __account_reputations[__voter_idx].is_implicit;
       --- reread voter's rep. since it can change above if author == voter
     __voter_rep := __account_reputations[__voter_idx].reputation;
+
+      raise notice 'Block: % - Author `%` - Processing a vote: (voter: `%`) rshares: %', __vote_data.block_num-1, __vote_data.author, __vote_data.voter, __vote_data.rshares;
+      raise notice 'Author `%` - Voter `%` reputation: %', __vote_data.author, __vote_data.voter, __voter_rep;
     
-      IF __rshares > 0 OR
-         (__rshares < 0 AND NOT __implicit_voter_rep AND __voter_rep > __author_rep) THEN
+      IF __voter_rep >= 0 AND (__rshares > 0 OR
+         (__rshares < 0 AND NOT __implicit_voter_rep AND __voter_rep > __author_rep)) THEN
 
         __rep_delta := (__rshares >> 6)::bigint;
         __new_author_rep = __author_rep + __rep_delta;
         __account_reputations[__author_idx] := ROW(__vote_data.author_id, __new_author_rep, False, true)::reputation_tracker_app.AccountReputation;
-        IF __vote_data.author = _tracked_account THEN
-          raise notice 'Changing account: <%> reputation from % to %', __vote_data.author, __author_rep, __new_author_rep;
-        END IF;
-      ELSE
-        IF __vote_data.author = _tracked_account THEN
-            raise notice 'Ignoring reputation change due to unmet conditions... Author_rep: %, Voter_rep: %', __author_rep, __voter_rep;
+
+        IF __implicit_author_rep THEN
+          raise notice 'Setting a reputation of author: `%` to %', __vote_data.author, __new_author_rep;
+        ELSE
+          raise notice 'Changing reputation of author: `%` from % to %', __vote_data.author, __author_rep, __new_author_rep;
         END IF;
       END IF;
 
