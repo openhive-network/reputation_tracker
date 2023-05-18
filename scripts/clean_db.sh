@@ -18,6 +18,7 @@ print_help () {
     echo "  --host=VALUE         Allows to specify a PostgreSQL host location (defaults to /var/run/postgresql)"
     echo "  --port=NUMBER        Allows to specify a PostgreSQL operating port (defaults to 5432)"
     echo "  --postgres-url=URL   Allows to specify a PostgreSQL URL (in opposite to separate --host and --port options)"
+    echo "  --drop-indexes       Allows to also drop indexes built by application on regular HAF tables (their rebuild can be timeconsuming). Indexes are preserved by default."
     echo "  --help               Display this help screen and exit"
     echo
 }
@@ -25,6 +26,7 @@ print_help () {
 POSTGRES_HOST="/var/run/postgresql"
 POSTGRES_PORT=5432
 POSTGRES_URL=""
+DROP_INDEXES=0
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -36,6 +38,9 @@ while [ $# -gt 0 ]; do
         ;;
     --postgres-url=*)
         POSTGRES_URL="${1#*=}"
+        ;;
+    --drop-indexes*)
+        DROP_INDEXES=1
         ;;
     --help)
         print_help
@@ -81,5 +86,13 @@ EOF
 
 psql -aw $POSTGRES_ACCESS -v ON_ERROR_STOP=on -c 'DROP OWNED BY reputation_tracker_app_owner CASCADE;' || true
 psql -aw $POSTGRES_ACCESS -v ON_ERROR_STOP=on -c 'DROP ROLE IF EXISTS reputation_tracker_app_owner, reputation_tracker_writer_group;'
-psql -aw $POSTGRES_ACCESS -v ON_ERROR_STOP=on -c 'DROP INDEX IF EXISTS hive.effective_comment_vote_idx;'
+
+if [ ${DROP_INDEXES} -eq 1 ]; then
+  echo "Attempting to drop indexes built by application"
+  psql -aw $POSTGRES_ACCESS -v ON_ERROR_STOP=on -c 'DROP INDEX IF EXISTS hive.effective_comment_vote_idx;'
+  psql -aw $POSTGRES_ACCESS -v ON_ERROR_STOP=on -c 'DROP INDEX IF EXISTS hive.delete_comment_op_idx;'
+  psql -aw $POSTGRES_ACCESS -v ON_ERROR_STOP=on -c 'DROP INDEX IF EXISTS hive.stable_id_block_num_effective_vote_idx;'
+else
+  echo "Indexes built by application has been preserved"
+fi
 
