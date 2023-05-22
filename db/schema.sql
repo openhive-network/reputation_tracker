@@ -76,9 +76,12 @@ CREATE OR REPLACE VIEW reputation_tracker_app.deleted_comment_operation_view
   WHERE o.op_type_id in (17, 61); -- include delete_comment_operation and comment_payout_update_operation
 
 create or replace view reputation_tracker_app.hive_reputation_data_view as
-select (CAST( o.block_num as BIGINT ) << 36
-       | ( o.trx_in_block::BIGINT << 20 )
-       | ( o.op_pos::BIGINT & CAST( x'0FFFFF' as BIGINT) )) AS id,
+select ((block_num::bigint << 36) |
+CASE trx_in_block = '-1'::integer
+    WHEN true THEN 32768::bigint << 20
+    ELSE trx_in_block::bigint << 20
+END
+ | (op_pos::bigint & '000011111111111111111111'::"bit"::bigint)) as id,
   o.block_num, o.trx_in_block, o.op_pos, (o.body::jsonb -> 'value' ->> 'author') as author, (o.body::jsonb -> 'value' ->> 'voter') as voter,
   (o.body::jsonb -> 'value' ->> 'permlink') as permlink,
   case jsonb_typeof (o.body::jsonb -> 'value' -> 'rshares')
@@ -105,6 +108,21 @@ GRANT ALL ON reputation_tracker_app.__new_reputation_data TO reputation_tracker_
 GRANT ALL ON reputation_tracker_app.__tmp_accounts TO reputation_tracker_writer_group;
 
 RESET ROLE;
+
+CREATE INDEX IF NOT EXISTS stable_id_block_num_effective_vote_idx
+    ON hive.operations USING btree
+	 (
+((block_num::bigint << 36) |
+CASE trx_in_block = '-1'::integer
+    WHEN true THEN 32768::bigint << 20
+    ELSE trx_in_block::bigint << 20
+END
+ | (op_pos::bigint & '000011111111111111111111'::"bit"::bigint)),
+	block_num
+)
+    TABLESPACE haf_tablespace
+    WHERE op_type_id = 72;
+
 
 --- This statement must be executed by haf_block_log database owner (haf_admin)
 CREATE INDEX IF NOT EXISTS effective_comment_vote_idx ON hive.operations USING btree
@@ -136,3 +154,5 @@ CREATE INDEX IF NOT EXISTS delete_comment_op_idx ON hive.operations USING btree
   )
   WHERE op_type_id in (17, 61)
   ;
+
+ANALYZE hive.operations;
