@@ -26,7 +26,7 @@ print_help () {
 POSTGRES_HOST="/var/run/postgresql"
 POSTGRES_PORT=5432
 POSTGRES_URL=""
-DROP_INDEXES=0
+DROP_ALL=0
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -39,8 +39,8 @@ while [ $# -gt 0 ]; do
     --postgres-url=*)
         POSTGRES_URL="${1#*=}"
         ;;
-    --drop-indexes*)
-        DROP_INDEXES=1
+    --drop-all*)
+        DROP_ALL=1
         ;;
     --help)
         print_help
@@ -84,15 +84,16 @@ DROP SCHEMA IF EXISTS reputation_tracker_app CASCADE;
 
 EOF
 
-psql -aw $POSTGRES_ACCESS -v ON_ERROR_STOP=on -c 'DROP OWNED BY reputation_tracker_app_owner CASCADE;' || true
-psql -aw $POSTGRES_ACCESS -v ON_ERROR_STOP=on -c 'DROP ROLE IF EXISTS reputation_tracker_app_owner, reputation_tracker_writer_group;'
+if [ ${DROP_ALL} -eq 1 ]; then
+  echo "Attempting to drop roles & indexes built by application"
 
-if [ ${DROP_INDEXES} -eq 1 ]; then
-  echo "Attempting to drop indexes built by application"
+  psql -aw $POSTGRES_ACCESS -v ON_ERROR_STOP=on -c 'DROP OWNED BY reputation_tracker_app_owner CASCADE;' || true
+  psql -aw $POSTGRES_ACCESS -v ON_ERROR_STOP=on -c 'DROP ROLE IF EXISTS reputation_tracker_app_owner, reputation_tracker_writer_group;'
+
   psql -aw $POSTGRES_ACCESS -v ON_ERROR_STOP=on -c 'DROP INDEX IF EXISTS hive.effective_comment_vote_idx;'
   psql -aw $POSTGRES_ACCESS -v ON_ERROR_STOP=on -c 'DROP INDEX IF EXISTS hive.delete_comment_op_idx;'
   psql -aw $POSTGRES_ACCESS -v ON_ERROR_STOP=on -c 'DROP INDEX IF EXISTS hive.stable_id_block_num_effective_vote_idx;'
 else
-  echo "Indexes built by application has been preserved"
+  echo "Indexes & roles created by application have been preserved"
 fi
 
