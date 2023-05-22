@@ -57,16 +57,31 @@ EXCEPTION WHEN duplicate_schema THEN RAISE NOTICE '%, skipping', SQLERRM USING E
 END
 $$;
 
+CREATE SCHEMA IF NOT EXISTS reputation_tracker_helpers;
+
+CREATE OR REPLACE FUNCTION reputation_tracker_helpers.calculate_operation_stable_id(_block_num hive.operations.block_num%TYPE,
+  _trx_in_block hive.operations.trx_in_block%TYPE, _op_pos hive.operations.op_pos%TYPE)
+RETURNS BIGINT
+LANGUAGE 'sql'
+IMMUTABLE
+AS $BODY$
+    SELECT ((_block_num::BIGINT << 36)
+           |(CASE _trx_in_block = -1
+               WHEN TRUE THEN
+                 32768::BIGINT << 20
+               ELSE
+                 _trx_in_block::BIGINT << 20
+             END
+            )
+          | (_op_pos::bigint & '000011111111111111111111'::"bit"::BIGINT)
+          )
+    END;
+$BODY$;
+
+
 CREATE OR REPLACE VIEW reputation_tracker_app.deleted_comment_operation_view
  AS
- SELECT ((o.block_num::bigint << 36) | (case o.trx_in_block = -1
-                      when true then
-                        32768::bigint << 20
-                      else
-                        o.trx_in_block::bigint << 20
-                     end
-                     )
-     | (o.op_pos::bigint & '000011111111111111111111'::"bit"::bigint)) AS id,
+ SELECT reputation_tracker_helpers.calculate_operation_stable_id(o.block_num, o.trx_in_block, o.op_pos) AS id,
     o.block_num,
     o.trx_in_block,
     o.op_pos,
@@ -75,13 +90,8 @@ CREATE OR REPLACE VIEW reputation_tracker_app.deleted_comment_operation_view
    FROM hive.reputation_tracker_app_operations_view o
   WHERE o.op_type_id in (17, 61); -- include delete_comment_operation and comment_payout_update_operation
 
-create or replace view reputation_tracker_app.hive_reputation_data_view as
-select ((block_num::bigint << 36) |
-CASE trx_in_block = '-1'::integer
-    WHEN true THEN 32768::bigint << 20
-    ELSE trx_in_block::bigint << 20
-END
- | (op_pos::bigint & '000011111111111111111111'::"bit"::bigint)) as id,
+CREATE OR REPLACE VIEW reputation_tracker_app.hive_reputation_data_view as
+  SELECT reputation_tracker_helpers.calculate_operation_stable_id(o.block_num, o.trx_in_block, o.op_pos) AS id,
   o.block_num, o.trx_in_block, o.op_pos, (o.body::jsonb -> 'value' ->> 'author') as author, (o.body::jsonb -> 'value' ->> 'voter') as voter,
   (o.body::jsonb -> 'value' ->> 'permlink') as permlink,
   case jsonb_typeof (o.body::jsonb -> 'value' -> 'rshares')
@@ -111,15 +121,10 @@ RESET ROLE;
 
 CREATE INDEX IF NOT EXISTS stable_id_block_num_effective_vote_idx
     ON hive.operations USING btree
-	 (
-((block_num::bigint << 36) |
-CASE trx_in_block = '-1'::integer
-    WHEN true THEN 32768::bigint << 20
-    ELSE trx_in_block::bigint << 20
-END
- | (op_pos::bigint & '000011111111111111111111'::"bit"::bigint)),
-	block_num
-)
+   (
+     (reputation_tracker_helpers.calculate_operation_stable_id(block_num, trx_in_block, op_pos)),
+     block_num
+   )
     TABLESPACE haf_tablespace
     WHERE op_type_id = 72;
 
@@ -130,10 +135,8 @@ CREATE INDEX IF NOT EXISTS effective_comment_vote_idx ON hive.operations USING b
    (body::jsonb -> 'value' ->> 'author'::text),
    (body::jsonb -> 'value' ->> 'voter'::text),
    (body::jsonb -> 'value' ->> 'permlink'::text),
-   (CAST( block_num as BIGINT ) << 36
-       | ( trx_in_block::BIGINT << 20 )
-       | ( op_pos::BIGINT & CAST( x'0FFFFF' as BIGINT) )) desc
-  )
+   (reputation_tracker_helpers.calculate_operation_stable_id(block_num, trx_in_block, op_pos)) desc
+   )
     WHERE op_type_id = 72
   ;
 
@@ -142,15 +145,7 @@ CREATE INDEX IF NOT EXISTS delete_comment_op_idx ON hive.operations USING btree
  (
    (body::jsonb -> 'value' ->> 'author'::text),
    (body::jsonb -> 'value' ->> 'permlink'::text),
-   ((block_num::bigint << 36)
-    | (case trx_in_block = -1
-      when true then
-        32768::bigint << 20
-      else
-        trx_in_block::bigint << 20
-    end
-    )
-    | (op_pos::bigint & '000011111111111111111111'::"bit"::bigint)) desc
+   (reputation_tracker_helpers.calculate_operation_stable_id(block_num, trx_in_block, op_pos)) desc
   )
   WHERE op_type_id in (17, 61)
   ;
