@@ -19,6 +19,7 @@ CREATE OR REPLACE FUNCTION reputation_tracker_app.calculate_account_reputations(
     SET from_collapse_limit = 16
     SET join_collapse_limit = 16
     SET jit = OFF
+    SET cursor_tuple_fraction=0.9
 AS $BODY$
 DECLARE
   __vote_data RECORD;
