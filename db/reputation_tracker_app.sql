@@ -58,12 +58,11 @@ $$
 ;
 
 
-CREATE OR REPLACE PROCEDURE reputation_tracker_app.do_massive_processing(IN _appContext VARCHAR, in _from INT, in _to INT, IN _step INT, INOUT _last_block INT)
+CREATE OR REPLACE PROCEDURE reputation_tracker_app.do_massive_processing(IN _appContext VARCHAR, in _from INT, in _to INT, IN _step INT, OUT _last_block integer)
 LANGUAGE 'plpgsql'
 AS
 $$
 DECLARE
-  _last_block integer;
   _final_block integer;
 BEGIN
   RAISE NOTICE 'Entering massive processing of block range: <%, %>...', _from, _to;
@@ -72,27 +71,44 @@ BEGIN
 
   --- You can do here also other things to speedup your app, i.e. disable constrains, remove indexes etc.
 
-  _last_block := reputation_tracker_app.update_account_reputations(_from, _to, 1000);
-  COMMIT;
+  FOR b IN _from .. _to BY _step LOOP
+    _last_block := b + _step - 1;
+
+    IF _last_block > _to THEN --- in case the _step is larger than range length
+      _last_block := _to;
+    END IF;
+
+    RAISE NOTICE 'Attempting to process a block range: <%, %>', b, _last_block;
+
+    _last_block := reputation_tracker_app.update_account_reputations(b, _last_block, 1000);
+
+    COMMIT;
+
+    RAISE NOTICE 'Block range: <%, %> processed successfully.', b, _last_block;
+
+    EXIT WHEN NOT reputation_tracker_app.continueProcessing();
+
+  END LOOP;
+
 
   IF reputation_tracker_app.continueProcessing() AND _last_block < _to THEN
     RAISE NOTICE 'Attempting to process a block range (rest): <%, %>', _last_block+1, _to;
+    
     --- Supplement last part of range if anything left.
     _final_block := reputation_tracker_app.update_account_reputations(_last_block+1, _to, 1000);
 
     COMMIT;
-    RAISE NOTICE 'Block range: <%, %> processed successfully.', _last_block+1, _to;
+    RAISE NOTICE 'Block range: <%, %> processed successfully.', _last_block+1, _final_block;
 
-    --- Update inout parameter
     _last_block := _final_block;
   END IF;
 
   RAISE NOTICE 'Attaching HAF application context at block: %.', _last_block;
   PERFORM hive.app_context_attach(_appContext, _last_block);
-
+  COMMIT;
  --- You should enable here all things previously disabled at begin of this function...
 
- RAISE NOTICE 'Leaving massive processing of block range: <%, %>...', _from, _to;
+ RAISE NOTICE 'Leaving massive processing of block range: <%, %>...', _from, _last_block;
 END
 $$
 ;
@@ -120,7 +136,7 @@ LANGUAGE 'plpgsql'
 AS
 $$
 DECLARE
-  __last_block INT;
+  __last_block INT := 0;
   __next_block_range hive.blocks_range;
 
 BEGIN
@@ -158,8 +174,7 @@ BEGIN
       --RAISE NOTICE 'Attempting to process block range: <%,%>', __next_block_range.first_block, __next_block_range.last_block;
 
       IF __next_block_range.first_block != __next_block_range.last_block THEN
-        CALL reputation_tracker_app.do_massive_processing(_appContext, __next_block_range.first_block, __next_block_range.last_block, 1000, __last_block);
-        raise notice 'Last block is: %', __last_block;
+        CALL reputation_tracker_app.do_massive_processing(_appContext, __next_block_range.first_block, __next_block_range.last_block, 5000000, __last_block);
       ELSE
         CALL reputation_tracker_app.processBlock(__next_block_range.last_block);
         __last_block := __next_block_range.last_block;
