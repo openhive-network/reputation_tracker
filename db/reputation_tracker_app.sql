@@ -118,10 +118,13 @@ LANGUAGE 'plpgsql'
 AS
 $$
 DECLARE
-  _last_block integer;
+  __last_block integer;
 BEGIN
-  _last_block := reputation_tracker_app.update_account_reputations(_block, _block, 1000);
+  RAISE NOTICE 'Processing block: %...', _block;
+  __last_block := reputation_tracker_app.update_account_reputations(_block, _block, 1000);
+  PERFORM reputation_tracker_app.storeLastProcessedBlock(__last_block);
   COMMIT; -- For single block processing we want to commit all changes for each one.
+  RAISE NOTICE 'Done.';
 END
 $$
 ;
@@ -138,7 +141,8 @@ $$
 DECLARE
   __last_block INT := 0;
   __next_block_range hive.blocks_range;
-
+  __block_range_len INT := 0;
+  __massive_processing_threshold INT := 100;
 BEGIN
   IF _maxBlockLimit != 0 THEN
     RAISE NOTICE 'Max block limit is specified as: %', _maxBlockLimit;
@@ -173,11 +177,17 @@ BEGIN
 
       --RAISE NOTICE 'Attempting to process block range: <%,%>', __next_block_range.first_block, __next_block_range.last_block;
 
-      IF __next_block_range.first_block != __next_block_range.last_block THEN
+      __block_range_len := __next_block_range.last_block - __next_block_range.first_block + 1;
+
+      IF __block_range_len >= __massive_processing_threshold THEN
         CALL reputation_tracker_app.do_massive_processing(_appContext, __next_block_range.first_block, __next_block_range.last_block, 5000000, __last_block);
       ELSE
-        CALL reputation_tracker_app.processBlock(__next_block_range.last_block);
-        __last_block := __next_block_range.last_block;
+        FOR __block IN __next_block_range.first_block .. __next_block_range.last_block LOOP
+          CALL reputation_tracker_app.processBlock(__block);
+          __last_block := __block;
+
+          EXIT WHEN reputation_tracker_app.continueProcessing() OR (_maxBlockLimit != 0 AND __last_block >= _maxBlockLimit);
+        END LOOP;
       END IF;
 
     END IF;
