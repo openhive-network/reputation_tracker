@@ -326,14 +326,17 @@ CREATE OR REPLACE FUNCTION reputation_tracker_app.update_account_reputations(
   OUT _last_processed_block INTEGER)
   RETURNS INT
   LANGUAGE 'plpgsql'
-  VOLATILE 
+  VOLATILE
+  SET from_collapse_limit = 16
+  SET join_collapse_limit = 16
+  SET jit = OFF
 AS $BODY$
 BEGIN
   INSERT INTO reputation_tracker_app.account_reputations
     (account_id, reputation, is_implicit)
   SELECT ha.id, 0, true
   FROM hive.accounts_view ha
-  ON CONFLICT (account_id) DO NOTHING
+  WHERE NOT EXISTS (SELECT NULL FROM reputation_tracker_app.account_reputations ar WHERE ar.account_id = ha.id)
   ;
 
   IF _first_block_num IS NULL OR _last_block_num IS NULL OR _first_block_num != _last_block_num THEN
