@@ -119,12 +119,18 @@ AS
 $$
 DECLARE
   __last_block integer;
+
+  __start_ts timestamptz;
+  __end_ts   timestamptz;
 BEGIN
   RAISE NOTICE 'Processing block: %...', _block;
+  __start_ts := clock_timestamp();
   __last_block := reputation_tracker_app.update_account_reputations(_block, _block, 1000);
   PERFORM reputation_tracker_app.storeLastProcessedBlock(__last_block);
   COMMIT; -- For single block processing we want to commit all changes for each one.
-  RAISE NOTICE 'Done.';
+  __end_ts := clock_timestamp();
+
+  RAISE NOTICE 'Done in time: % ms', 1000 * (extract(epoch FROM __end_ts - __start_ts));
 END
 $$
 ;
