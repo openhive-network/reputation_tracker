@@ -332,11 +332,17 @@ CREATE OR REPLACE FUNCTION reptracker_app.update_account_reputations(
   SET jit = OFF
 AS $BODY$
 BEGIN
+  WITH select_account_reputations AS MATERIALIZED
+  (
+  SELECT ha.id AS ha_id, 0, true, ar.account_id as ar_id
+  FROM hive.accounts_view ha
+  JOIN reptracker_app.account_reputations ar ON ar.account_id = ha.id
+  )
   INSERT INTO reptracker_app.account_reputations
     (account_id, reputation, is_implicit)
-  SELECT ha.id, 0, true
-  FROM hive.accounts_view ha
-  WHERE NOT EXISTS (SELECT NULL FROM reptracker_app.account_reputations ar WHERE ar.account_id = ha.id)
+  SELECT sar.ha_id, 0, true
+  FROM select_account_reputations sar
+  WHERE sar.ar_id IS NULL
   ;
 
   IF _first_block_num IS NULL OR _last_block_num IS NULL OR _first_block_num != _last_block_num THEN
