@@ -1,40 +1,40 @@
-SET ROLE reputation_tracker_app_owner;
+SET ROLE reptracker_app_owner;
 
 DO $$
 BEGIN
 
-CREATE SCHEMA reputation_tracker_app AUTHORIZATION reputation_tracker_app_owner;
+CREATE SCHEMA reptracker_app AUTHORIZATION reptracker_app_owner;
 
 RAISE NOTICE 'Attempting to create an application schema tables...';
 
-IF NOT hive.app_context_exists('reputation_tracker_app') THEN
+IF NOT hive.app_context_exists('reptracker_app') THEN
     RAISE NOTICE 'Attempting to create a HAF application context...';
-    PERFORM hive.app_create_context('reputation_tracker_app');
+    PERFORM hive.app_create_context('reptracker_app');
 END IF;
 
-CREATE TABLE IF NOT EXISTS reputation_tracker_app.app_status
+CREATE TABLE IF NOT EXISTS reptracker_app.app_status
 (
   continue_processing BOOLEAN NOT NULL,
   last_processed_block INT NOT NULL
 );
 
-INSERT INTO reputation_tracker_app.app_status
+INSERT INTO reptracker_app.app_status
 (continue_processing, last_processed_block)
 VALUES
 (True, 0)
 ;
 
-CREATE TABLE IF NOT EXISTS reputation_tracker_app.account_reputations
+CREATE TABLE IF NOT EXISTS reptracker_app.account_reputations
 (
     account_id INT NOT NULL,
     reputation BIGINT NOT NULL,
     is_implicit boolean,
     CONSTRAINT PK_account_reputations PRIMARY KEY (account_id)
 )
-INHERITS (hive.reputation_tracker_app)
+INHERITS (hive.reptracker_app)
 ;
 
-CREATE UNLOGGED TABLE IF NOT EXISTS reputation_tracker_app.__new_reputation_data
+CREATE UNLOGGED TABLE IF NOT EXISTS reptracker_app.__new_reputation_data
 (
     id bigint,
     author_id int,
@@ -44,7 +44,7 @@ CREATE UNLOGGED TABLE IF NOT EXISTS reputation_tracker_app.__new_reputation_data
 )
 ;
 
-CREATE UNLOGGED TABLE IF NOT EXISTS reputation_tracker_app.__tmp_accounts
+CREATE UNLOGGED TABLE IF NOT EXISTS reptracker_app.__tmp_accounts
 (
     id integer,
     reputation bigint,
@@ -79,7 +79,7 @@ AS $BODY$
 $BODY$;
 
 
-CREATE OR REPLACE VIEW reputation_tracker_app.deleted_comment_operation_view
+CREATE OR REPLACE VIEW reptracker_app.deleted_comment_operation_view
  AS
  SELECT reputation_tracker_helpers.calculate_operation_stable_id(o.block_num, o.trx_in_block, o.op_pos) AS id,
     o.block_num,
@@ -87,10 +87,10 @@ CREATE OR REPLACE VIEW reputation_tracker_app.deleted_comment_operation_view
     o.op_pos,
     (o.body::jsonb -> 'value'::text) ->> 'author'::text AS author,
     (o.body::jsonb -> 'value'::text) ->> 'permlink'::text AS permlink
-   FROM hive.reputation_tracker_app_operations_view o
+   FROM hive.reptracker_app_operations_view o
   WHERE o.op_type_id in (17, 61); -- include delete_comment_operation and comment_payout_update_operation
 
-CREATE OR REPLACE VIEW reputation_tracker_app.hive_reputation_data_view as
+CREATE OR REPLACE VIEW reptracker_app.hive_reputation_data_view as
   SELECT reputation_tracker_helpers.calculate_operation_stable_id(o.block_num, o.trx_in_block, o.op_pos) AS id,
   o.block_num, o.trx_in_block, o.op_pos, (o.body::jsonb -> 'value' ->> 'author') as author, (o.body::jsonb -> 'value' ->> 'voter') as voter,
   (o.body::jsonb -> 'value' ->> 'permlink') as permlink,
@@ -103,19 +103,19 @@ CREATE OR REPLACE VIEW reputation_tracker_app.hive_reputation_data_view as
      null::bigint
   end as rshares
 
-from hive.reputation_tracker_app_operations_view o
+from hive.reptracker_app_operations_view o
 where o.op_type_id = 72
   ;
 
 
 
-GRANT USAGE ON SCHEMA reputation_tracker_app TO reputation_tracker_writer_group;
+GRANT USAGE ON SCHEMA reptracker_app TO reputation_tracker_writer_group;
 
 --- Only data writers can write to such table(s)
-GRANT ALL ON reputation_tracker_app.app_status TO reputation_tracker_writer_group;
-GRANT ALL ON reputation_tracker_app.account_reputations TO reputation_tracker_writer_group;
-GRANT ALL ON reputation_tracker_app.__new_reputation_data TO reputation_tracker_writer_group;
-GRANT ALL ON reputation_tracker_app.__tmp_accounts TO reputation_tracker_writer_group;
+GRANT ALL ON reptracker_app.app_status TO reputation_tracker_writer_group;
+GRANT ALL ON reptracker_app.account_reputations TO reputation_tracker_writer_group;
+GRANT ALL ON reptracker_app.__new_reputation_data TO reputation_tracker_writer_group;
+GRANT ALL ON reptracker_app.__tmp_accounts TO reputation_tracker_writer_group;
 
 RESET ROLE;
 
@@ -132,9 +132,9 @@ CREATE INDEX IF NOT EXISTS stable_id_block_num_effective_vote_idx
 --- This statement must be executed by haf_block_log database owner (haf_admin)
 CREATE INDEX IF NOT EXISTS effective_comment_vote_idx ON hive.operations USING btree
     (
-   (body::jsonb -> 'value' ->> 'author'::text),
-   (body::jsonb -> 'value' ->> 'voter'::text),
-   (body::jsonb -> 'value' ->> 'permlink'::text),
+   (body_binary::jsonb -> 'value' ->> 'author'::text),
+   (body_binary::jsonb -> 'value' ->> 'voter'::text),
+   (body_binary::jsonb -> 'value' ->> 'permlink'::text),
    (reputation_tracker_helpers.calculate_operation_stable_id(block_num, trx_in_block, op_pos)) desc
    )
     WHERE op_type_id = 72
@@ -143,8 +143,8 @@ CREATE INDEX IF NOT EXISTS effective_comment_vote_idx ON hive.operations USING b
 --- This statement must be executed by haf_block_log database owner (haf_admin)
 CREATE INDEX IF NOT EXISTS delete_comment_op_idx ON hive.operations USING btree
  (
-   (body::jsonb -> 'value' ->> 'author'::text),
-   (body::jsonb -> 'value' ->> 'permlink'::text),
+   (body_binary::jsonb -> 'value' ->> 'author'::text),
+   (body_binary::jsonb -> 'value' ->> 'permlink'::text),
    (reputation_tracker_helpers.calculate_operation_stable_id(block_num, trx_in_block, op_pos)) desc
   )
   WHERE op_type_id in (17, 61)

@@ -1,64 +1,64 @@
-SET ROLE reputation_tracker_app_owner;
+SET ROLE reptracker_app_owner;
 
 --- Helper function telling application main-loop to continue execution.
-CREATE OR REPLACE FUNCTION reputation_tracker_app.continueProcessing()
+CREATE OR REPLACE FUNCTION reptracker_app.continueProcessing()
 RETURNS BOOLEAN
 LANGUAGE 'plpgsql'
 AS
 $$
 BEGIN
-  RETURN continue_processing FROM reputation_tracker_app.app_status LIMIT 1;
+  RETURN continue_processing FROM reptracker_app.app_status LIMIT 1;
 END
 $$
 ;
 
-CREATE OR REPLACE FUNCTION reputation_tracker_app.allowProcessing()
+CREATE OR REPLACE FUNCTION reptracker_app.allowProcessing()
 RETURNS VOID
 LANGUAGE 'plpgsql'
 AS
 $$
 BEGIN
-  UPDATE reputation_tracker_app.app_status SET continue_processing = True;
+  UPDATE reptracker_app.app_status SET continue_processing = True;
 END
 $$
 ;
 
 --- Helper function to be called from separate transaction (must be committed) to safely stop execution of the application.
-CREATE OR REPLACE FUNCTION reputation_tracker_app.stopProcessing()
+CREATE OR REPLACE FUNCTION reptracker_app.stopProcessing()
 RETURNS VOID
 LANGUAGE 'plpgsql'
 AS
 $$
 BEGIN
-  UPDATE reputation_tracker_app.app_status SET continue_processing = False;
+  UPDATE reptracker_app.app_status SET continue_processing = False;
 END
 $$
 ;
 
-CREATE OR REPLACE FUNCTION reputation_tracker_app.storeLastProcessedBlock(IN _lastBlock INT)
+CREATE OR REPLACE FUNCTION reptracker_app.storeLastProcessedBlock(IN _lastBlock INT)
 RETURNS VOID
 LANGUAGE 'plpgsql'
 AS
 $$
 BEGIN
-  UPDATE reputation_tracker_app.app_status SET last_processed_block = _lastBlock;
+  UPDATE reptracker_app.app_status SET last_processed_block = _lastBlock;
 END
 $$
 ;
 
-CREATE OR REPLACE FUNCTION reputation_tracker_app.lastProcessedBlock()
+CREATE OR REPLACE FUNCTION reptracker_app.lastProcessedBlock()
 RETURNS INT
 LANGUAGE 'plpgsql'
 AS
 $$
 BEGIN
-  RETURN last_processed_block FROM reputation_tracker_app.app_status LIMIT 1;
+  RETURN last_processed_block FROM reptracker_app.app_status LIMIT 1;
 END
 $$
 ;
 
 
-CREATE OR REPLACE PROCEDURE reputation_tracker_app.do_massive_processing(IN _appContext VARCHAR, in _from INT, in _to INT, IN _step INT, OUT _last_block integer)
+CREATE OR REPLACE PROCEDURE reptracker_app.do_massive_processing(IN _appContext VARCHAR, in _from INT, in _to INT, IN _step INT, OUT _last_block integer)
 LANGUAGE 'plpgsql'
 AS
 $$
@@ -80,22 +80,22 @@ BEGIN
 
     RAISE NOTICE 'Attempting to process a block range: <%, %>', b, _last_block;
 
-    _last_block := reputation_tracker_app.update_account_reputations(b, _last_block, 1000);
+    _last_block := reptracker_app.update_account_reputations(b, _last_block, 1000);
 
     COMMIT;
 
     RAISE NOTICE 'Block range: <%, %> processed successfully.', b, _last_block;
 
-    EXIT WHEN NOT reputation_tracker_app.continueProcessing();
+    EXIT WHEN NOT reptracker_app.continueProcessing();
 
   END LOOP;
 
 
-  IF reputation_tracker_app.continueProcessing() AND _last_block < _to THEN
+  IF reptracker_app.continueProcessing() AND _last_block < _to THEN
     RAISE NOTICE 'Attempting to process a block range (rest): <%, %>', _last_block+1, _to;
     
     --- Supplement last part of range if anything left.
-    _final_block := reputation_tracker_app.update_account_reputations(_last_block+1, _to, 1000);
+    _final_block := reptracker_app.update_account_reputations(_last_block+1, _to, 1000);
 
     COMMIT;
     RAISE NOTICE 'Block range: <%, %> processed successfully.', _last_block+1, _final_block;
@@ -113,7 +113,7 @@ END
 $$
 ;
 
-CREATE OR REPLACE PROCEDURE reputation_tracker_app.processBlock(in _block INT)
+CREATE OR REPLACE PROCEDURE reptracker_app.processBlock(in _block INT)
 LANGUAGE 'plpgsql'
 AS
 $$
@@ -125,8 +125,8 @@ DECLARE
 BEGIN
   RAISE NOTICE 'Processing block: %...', _block;
   __start_ts := clock_timestamp();
-  __last_block := reputation_tracker_app.update_account_reputations(_block, _block, 1000);
-  PERFORM reputation_tracker_app.storeLastProcessedBlock(__last_block);
+  __last_block := reptracker_app.update_account_reputations(_block, _block, 1000);
+  PERFORM reptracker_app.storeLastProcessedBlock(__last_block);
   COMMIT; -- For single block processing we want to commit all changes for each one.
   __end_ts := clock_timestamp();
 
@@ -138,9 +138,9 @@ $$
 /** Application entry point, which:
   - defines its data schema,
   - creates HAF application context,
-  - starts application main-loop (which iterates infinitely). To stop it call `reputation_tracker_app.stopProcessing();` from another session and commit its trasaction.
+  - starts application main-loop (which iterates infinitely). To stop it call `reptracker_app.stopProcessing();` from another session and commit its trasaction.
 */
-CREATE OR REPLACE PROCEDURE reputation_tracker_app.main(IN _appContext VARCHAR = 'reputation_tracker_app', IN _maxBlockLimit INT = 0)
+CREATE OR REPLACE PROCEDURE reptracker_app.main(IN _appContext VARCHAR = 'reptracker_app', IN _maxBlockLimit INT = 0)
 LANGUAGE 'plpgsql'
 AS
 $$
@@ -154,10 +154,10 @@ BEGIN
     RAISE NOTICE 'Max block limit is specified as: %', _maxBlockLimit;
   END IF;
 
-  PERFORM reputation_tracker_app.allowProcessing();
+  PERFORM reptracker_app.allowProcessing();
   COMMIT;
 
-  SELECT reputation_tracker_app.lastProcessedBlock() INTO __last_block;
+  SELECT reptracker_app.lastProcessedBlock() INTO __last_block;
 
   RAISE NOTICE 'Last block processed by application: %', __last_block;
 
@@ -167,7 +167,7 @@ BEGIN
 
   RAISE NOTICE 'Entering application main loop...';
 
-  WHILE reputation_tracker_app.continueProcessing() AND (_maxBlockLimit = 0 OR __last_block < _maxBlockLimit) LOOP
+  WHILE reptracker_app.continueProcessing() AND (_maxBlockLimit = 0 OR __last_block < _maxBlockLimit) LOOP
     __next_block_range := hive.app_next_block(_appContext);
 
     IF __next_block_range IS NULL THEN
@@ -186,13 +186,13 @@ BEGIN
       __block_range_len := __next_block_range.last_block - __next_block_range.first_block + 1;
 
       IF __block_range_len >= __massive_processing_threshold THEN
-        CALL reputation_tracker_app.do_massive_processing(_appContext, __next_block_range.first_block, __next_block_range.last_block, 5000000, __last_block);
+        CALL reptracker_app.do_massive_processing(_appContext, __next_block_range.first_block, __next_block_range.last_block, 10000, __last_block);
       ELSE
         FOR __block IN __next_block_range.first_block .. __next_block_range.last_block LOOP
-          CALL reputation_tracker_app.processBlock(__block);
+          CALL reptracker_app.processBlock(__block);
           __last_block := __block;
 
-          EXIT WHEN reputation_tracker_app.continueProcessing() OR (_maxBlockLimit != 0 AND __last_block >= _maxBlockLimit);
+          EXIT WHEN reptracker_app.continueProcessing() OR (_maxBlockLimit != 0 AND __last_block >= _maxBlockLimit);
         END LOOP;
       END IF;
 
@@ -201,14 +201,14 @@ BEGIN
   END LOOP;
 
   RAISE NOTICE 'Exiting application main loop at processed block: %.', __last_block;
-  PERFORM reputation_tracker_app.storeLastProcessedBlock(__last_block);
+  PERFORM reptracker_app.storeLastProcessedBlock(__last_block);
 
   COMMIT;
 END
 $$
 ;
 
-GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA reputation_tracker_app TO reputation_tracker_writer_group;
+GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA reptracker_app TO reputation_tracker_writer_group;
 
 RESET ROLE;
 

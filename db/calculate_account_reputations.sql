@@ -1,13 +1,13 @@
-SET ROLE reputation_tracker_app_owner;
+SET ROLE reptracker_app_owner;
 
-DROP TYPE IF EXISTS reputation_tracker_app.AccountReputation CASCADE;
+DROP TYPE IF EXISTS reptracker_app.AccountReputation CASCADE;
 
-CREATE TYPE reputation_tracker_app.AccountReputation AS (id int, reputation bigint, is_implicit boolean, changed boolean);
+CREATE TYPE reptracker_app.AccountReputation AS (id int, reputation bigint, is_implicit boolean, changed boolean);
 
-DROP FUNCTION IF EXISTS reputation_tracker_app.calculate_account_reputations;
+DROP FUNCTION IF EXISTS reptracker_app.calculate_account_reputations;
 
 --- Massive version of account reputation calculation.
-CREATE OR REPLACE FUNCTION reputation_tracker_app.calculate_account_reputations(
+CREATE OR REPLACE FUNCTION reptracker_app.calculate_account_reputations(
   IN _first_block_num integer,
   IN _last_block_num integer,
   IN _reporting_step integer,
@@ -23,7 +23,7 @@ CREATE OR REPLACE FUNCTION reputation_tracker_app.calculate_account_reputations(
 AS $BODY$
 DECLARE
   __vote_data RECORD;
-  __account_reputations reputation_tracker_app.AccountReputation[];
+  __account_reputations reptracker_app.AccountReputation[];
   __author_rep bigint;
   __new_author_rep bigint;
   __voter_rep bigint;
@@ -45,8 +45,8 @@ BEGIN
   --- In case when pointed range is empty
   _last_processed_block := _last_block_num;
 
-  SELECT INTO __account_reputations ARRAY(SELECT ROW(a.account_id, a.reputation, a.is_implicit, false)::reputation_tracker_app.AccountReputation
-  FROM reputation_tracker_app.account_reputations a
+  SELECT INTO __account_reputations ARRAY(SELECT ROW(a.account_id, a.reputation, a.is_implicit, false)::reptracker_app.AccountReputation
+  FROM reptracker_app.account_reputations a
   ORDER BY a.account_id);
 
   FOR __vote_data IN
@@ -54,15 +54,15 @@ BEGIN
     (
     SELECT rd.id, rd.block_num, rd.author, rd.permlink, rd.voter, rd.rshares,
           COALESCE((SELECT prd.rshares
-                   FROM reputation_tracker_app.hive_reputation_data_view prd
+                   FROM reptracker_app.hive_reputation_data_view prd
                    WHERE prd.author = rd.author AND prd.voter = rd.voter
                          AND prd.permlink = rd.permlink AND prd.id < rd.id
                          --- warning previous votes targeting posts which have been next deleted (before voting again) must be ignored
-                         AND NOT EXISTS (SELECT NULL FROM reputation_tracker_app.deleted_comment_operation_view dp
+                         AND NOT EXISTS (SELECT NULL FROM reptracker_app.deleted_comment_operation_view dp
                                          WHERE dp.author = rd.author and dp.permlink = rd.permlink and dp.id between prd.id and rd.id)
                    ORDER BY prd.id DESC LIMIT 1), 0
           ) AS prev_rshares
-        FROM reputation_tracker_app.hive_reputation_data_view rd
+        FROM reptracker_app.hive_reputation_data_view rd
         WHERE (_first_block_num IS NULL AND _last_block_num IS NULL) OR (rd.block_num BETWEEN _first_block_num AND _last_block_num)
     )
     select s.id, s.block_num, s.author, s.permlink, ha.id as author_id, s.voter, hv.id as voter_id, s.rshares, s.prev_rshares
@@ -81,7 +81,7 @@ BEGIN
 
          __last_reported_block := __vote_data.block_num;
 
-         EXIT WHEN NOT reputation_tracker_app.continueProcessing();
+         EXIT WHEN NOT reptracker_app.continueProcessing();
 
       END IF;
 
@@ -117,7 +117,7 @@ BEGIN
             __author_rep := __author_rep - __prev_rep_delta;
             __implicit_author_rep := __author_rep = 0;
 
-            __account_reputations[__author_idx] := ROW(__vote_data.author_id, __author_rep, __implicit_author_rep, true)::reputation_tracker_app.AccountReputation;
+            __account_reputations[__author_idx] := ROW(__vote_data.author_id, __author_rep, __implicit_author_rep, true)::reptracker_app.AccountReputation;
             
           IF __debug_log THEN 
             IF __implicit_author_rep THEN
@@ -142,7 +142,7 @@ BEGIN
 
         __rep_delta := (__rshares >> 6)::bigint;
         __new_author_rep = __author_rep + __rep_delta;
-        __account_reputations[__author_idx] := ROW(__vote_data.author_id, __new_author_rep, False, true)::reputation_tracker_app.AccountReputation;
+        __account_reputations[__author_idx] := ROW(__vote_data.author_id, __new_author_rep, False, true)::reptracker_app.AccountReputation;
 
         IF __debug_log THEN 
           IF __implicit_author_rep THEN
@@ -156,7 +156,7 @@ BEGIN
       _last_processed_block := __vote_data.block_num;
     END LOOP;
 
-  INSERT INTO reputation_tracker_app.account_reputations
+  INSERT INTO reptracker_app.account_reputations
     (account_id, reputation, is_implicit)
   SELECT ds.id, ds.reputation, ds.is_implicit
   FROM unnest(__account_reputations) ds
@@ -171,10 +171,10 @@ END
 $BODY$
 ;
 
-DROP FUNCTION IF EXISTS reputation_tracker_app.calculate_account_reputations_for_block;
+DROP FUNCTION IF EXISTS reptracker_app.calculate_account_reputations_for_block;
 
 
-CREATE OR REPLACE FUNCTION reputation_tracker_app.calculate_account_reputations_for_block(IN _block_num INT, OUT _last_processed_block INT, IN _tracked_account VARCHAR DEFAULT NULL::VARCHAR)
+CREATE OR REPLACE FUNCTION reptracker_app.calculate_account_reputations_for_block(IN _block_num INT, OUT _last_processed_block INT, IN _tracked_account VARCHAR DEFAULT NULL::VARCHAR)
   RETURNS INT
   LANGUAGE 'plpgsql'
   VOLATILE
@@ -199,22 +199,22 @@ DECLARE
   __account_name varchar;
 BEGIN
 
-  DELETE FROM reputation_tracker_app.__new_reputation_data;
+  DELETE FROM reptracker_app.__new_reputation_data;
 
-  INSERT INTO reputation_tracker_app.__new_reputation_data
+  INSERT INTO reptracker_app.__new_reputation_data
     with source_data as materialized
     (
     SELECT rd.id, rd.block_num, rd.author, rd.voter, rd.rshares,
           COALESCE((SELECT prd.rshares
-                   FROM reputation_tracker_app.hive_reputation_data_view prd
+                   FROM reptracker_app.hive_reputation_data_view prd
                    WHERE prd.author = rd.author AND prd.voter = rd.voter
                          AND prd.permlink = rd.permlink AND prd.id < rd.id
                          --- warning previous votes targeting posts which have been next deleted (before voting again) must be ignored
-                         AND NOT EXISTS (SELECT NULL FROM reputation_tracker_app.deleted_comment_operation_view dp
+                         AND NOT EXISTS (SELECT NULL FROM reptracker_app.deleted_comment_operation_view dp
                                          WHERE dp.author = rd.author and dp.permlink = rd.permlink and dp.id between prd.id and rd.id)
                    ORDER BY prd.id DESC LIMIT 1), 0
           ) AS prev_rshares
-        FROM reputation_tracker_app.hive_reputation_data_view rd
+        FROM reptracker_app.hive_reputation_data_view rd
         WHERE rd.block_num = _block_num
     )
     select s.id, ha.id as author_id, hv.id as voter_id, s.rshares, s.prev_rshares
@@ -225,29 +225,29 @@ BEGIN
     ;
 
 
-  DELETE FROM reputation_tracker_app.__tmp_accounts;
+  DELETE FROM reptracker_app.__tmp_accounts;
 
-  INSERT INTO reputation_tracker_app.__tmp_accounts
+  INSERT INTO reptracker_app.__tmp_accounts
   SELECT ha.account_id, ha.reputation, ha.is_implicit, false AS changed
-  FROM reputation_tracker_app.__new_reputation_data rd
-  JOIN reputation_tracker_app.account_reputations ha on rd.author_id = ha.account_id
+  FROM reptracker_app.__new_reputation_data rd
+  JOIN reptracker_app.account_reputations ha on rd.author_id = ha.account_id
   UNION
   SELECT hv.account_id, hv.reputation, hv.is_implicit, false as changed
-  FROM reputation_tracker_app.__new_reputation_data rd
-  JOIN reputation_tracker_app.account_reputations hv on rd.voter_id = hv.account_id
+  FROM reptracker_app.__new_reputation_data rd
+  JOIN reptracker_app.account_reputations hv on rd.voter_id = hv.account_id
   ;
 
   SELECT COALESCE((SELECT ha.id FROM hive.accounts ha WHERE ha.name = _tracked_account), 0) INTO __traced_author;
 
   FOR __vote_data IN
       SELECT rd.id, rd.author_id, rd.voter_id, rd.rshares, rd.prev_rshares
-      FROM reputation_tracker_app.__new_reputation_data rd
+      FROM reptracker_app.__new_reputation_data rd
       ORDER BY rd.id
     LOOP
       SELECT INTO __voter_rep, __implicit_voter_rep ha.reputation, ha.is_implicit 
-      FROM reputation_tracker_app.__tmp_accounts ha where ha.id = __vote_data.voter_id;
+      FROM reptracker_app.__tmp_accounts ha where ha.id = __vote_data.voter_id;
       SELECT INTO __author_rep, __implicit_author_rep ha.reputation, ha.is_implicit 
-      FROM reputation_tracker_app.__tmp_accounts ha where ha.id = __vote_data.author_id;
+      FROM reptracker_app.__tmp_accounts ha where ha.id = __vote_data.author_id;
 
       IF __vote_data.author_id = __traced_author THEN
            raise notice 'Processing vote <%> rshares: %, prev_rshares: %', __vote_data.id, __vote_data.rshares, __vote_data.prev_rshares;
@@ -284,7 +284,7 @@ BEGIN
         __new_author_rep = __author_rep + __rep_delta;
         __author_rep_changed = true;
 
-        UPDATE reputation_tracker_app.__tmp_accounts
+        UPDATE reptracker_app.__tmp_accounts
         SET reputation = __new_author_rep,
             is_implicit = False,
             changed = true
@@ -302,10 +302,10 @@ BEGIN
 
     _last_processed_block := _block_num;
 
-  INSERT INTO reputation_tracker_app.account_reputations
+  INSERT INTO reptracker_app.account_reputations
     (account_id, reputation, is_implicit)
   SELECT ds.id, ds.reputation, ds.is_implicit
-  FROM reputation_tracker_app.__tmp_accounts ds
+  FROM reptracker_app.__tmp_accounts ds
   WHERE ds.Reputation IS NOT NULL AND ds.Changed
   ON CONFLICT (account_id) DO UPDATE
   SET 
@@ -317,9 +317,9 @@ END
 $BODY$
 ;
 
-DROP FUNCTION IF EXISTS reputation_tracker_app.update_account_reputations;
+DROP FUNCTION IF EXISTS reptracker_app.update_account_reputations;
 
-CREATE OR REPLACE FUNCTION reputation_tracker_app.update_account_reputations(
+CREATE OR REPLACE FUNCTION reptracker_app.update_account_reputations(
   in _first_block_num INTEGER,
   in _last_block_num INTEGER,
   IN _reporting_step INTEGER,
@@ -332,23 +332,23 @@ CREATE OR REPLACE FUNCTION reputation_tracker_app.update_account_reputations(
   SET jit = OFF
 AS $BODY$
 BEGIN
-  INSERT INTO reputation_tracker_app.account_reputations
+  INSERT INTO reptracker_app.account_reputations
     (account_id, reputation, is_implicit)
   SELECT ha.id, 0, true
   FROM hive.accounts_view ha
-  WHERE NOT EXISTS (SELECT NULL FROM reputation_tracker_app.account_reputations ar WHERE ar.account_id = ha.id)
+  WHERE NOT EXISTS (SELECT NULL FROM reptracker_app.account_reputations ar WHERE ar.account_id = ha.id)
   ;
 
   IF _first_block_num IS NULL OR _last_block_num IS NULL OR _first_block_num != _last_block_num THEN
-    _last_processed_block := reputation_tracker_app.calculate_account_reputations(_first_block_num, _last_block_num, _reporting_step);
+    _last_processed_block := reptracker_app.calculate_account_reputations(_first_block_num, _last_block_num, _reporting_step);
   ELSE
-    _last_processed_block := reputation_tracker_app.calculate_account_reputations_for_block(_first_block_num);
+    _last_processed_block := reptracker_app.calculate_account_reputations_for_block(_first_block_num);
   END IF;
 
 END
 $BODY$
 ;
 
-GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA reputation_tracker_app TO reputation_tracker_writer_group;
+GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA reptracker_app TO reputation_tracker_writer_group;
 
 RESET ROLE;

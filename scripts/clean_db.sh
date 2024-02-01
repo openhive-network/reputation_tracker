@@ -73,22 +73,22 @@ psql $POSTGRES_ACCESS -v ON_ERROR_STOP=on -f - <<EOF
 
 DO \$$
 BEGIN
-IF hive.app_context_exists('reputation_tracker_app') THEN
+IF hive.app_context_exists('reptracker_app') THEN
     RAISE NOTICE 'Attempting to REMOVE a HAF application context for reputation_tracker app...';
-    PERFORM hive.app_remove_context('reputation_tracker_app');
+    PERFORM hive.app_remove_context('reptracker_app');
 END IF;
 END
 \$$;
 
-DROP SCHEMA IF EXISTS reputation_tracker_app CASCADE;
+DROP SCHEMA IF EXISTS reptracker_app CASCADE;
 
 EOF
 
 if [ ${DROP_ALL} -eq 1 ]; then
   echo "Attempting to drop roles & indexes built by application"
 
-  psql -aw $POSTGRES_ACCESS -v ON_ERROR_STOP=on -c 'DROP OWNED BY reputation_tracker_app_owner CASCADE;' || true
-  psql -aw $POSTGRES_ACCESS -v ON_ERROR_STOP=on -c 'DROP ROLE IF EXISTS reputation_tracker_app_owner, reputation_tracker_writer_group;'
+  psql -aw $POSTGRES_ACCESS -v ON_ERROR_STOP=on -c 'DROP OWNED BY reptracker_app_owner CASCADE;' || true
+  psql -aw $POSTGRES_ACCESS -v ON_ERROR_STOP=on -c 'DROP ROLE IF EXISTS reptracker_app_owner, reputation_tracker_writer_group;'
 
   psql -aw $POSTGRES_ACCESS -v ON_ERROR_STOP=on -c 'DROP INDEX IF EXISTS hive.effective_comment_vote_idx;'
   psql -aw $POSTGRES_ACCESS -v ON_ERROR_STOP=on -c 'DROP INDEX IF EXISTS hive.delete_comment_op_idx;'
