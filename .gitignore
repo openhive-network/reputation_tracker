@@ -1,3 +1,5 @@
 .tests/
 reptracker_app.log
+reptracker_app.log1
 install_app.log
+uninstall_app.log

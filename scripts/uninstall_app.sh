@@ -3,7 +3,7 @@
 SCRIPTPATH="$( cd -- "$(dirname "$0")" >/dev/null 2>&1 ; pwd -P )"
 SRCPATH="${SCRIPTPATH}/../"
 
-LOG_FILE=setup_db.log
+LOG_FILE=uninstall_app.log
 source "$SCRIPTPATH/common.sh"
 
 log_exec_params "$@"
