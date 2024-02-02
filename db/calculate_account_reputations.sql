@@ -6,6 +6,11 @@ CREATE TYPE reptracker_app.AccountReputation AS (id int, reputation bigint, is_i
 
 DROP FUNCTION IF EXISTS reptracker_app.calculate_account_reputations;
 
+-- 1. 3.44s -- podstawa
+-- 2. 3.08s -- zmiana na CTE w update_account_reputations
+-- 3. 2.32s -- zmiana na CTE w calculate_account_reputations
+-- 4. 2.30s -- zmiana na id w indexach i views z calculate_operation_stable_id
+
 --- Massive version of account reputation calculation.
 CREATE OR REPLACE FUNCTION reptracker_app.calculate_account_reputations(
   IN _first_block_num integer,
@@ -50,26 +55,55 @@ BEGIN
   ORDER BY a.account_id);
 
   FOR __vote_data IN
-    with source_data as materialized
+  WITH selected_range AS MATERIALIZED 
+  (
+    SELECT rd.id, rd.block_num, rd.author, rd.permlink, rd.voter, rd.rshares
+    FROM reptracker_app.hive_reputation_data_view rd
+    WHERE (_first_block_num IS NULL AND _last_block_num IS NULL) OR (rd.block_num BETWEEN _first_block_num AND _last_block_num)
+  ),
+  filtered_range AS MATERIALIZED 
+  (
+  SELECT up.id AS up_id, up.block_num, up.author, up.permlink, up.voter, up.rshares AS up_rshares,
     (
-    SELECT rd.id, rd.block_num, rd.author, rd.permlink, rd.voter, rd.rshares,
-          COALESCE((SELECT prd.rshares
-                   FROM reptracker_app.hive_reputation_data_view prd
-                   WHERE prd.author = rd.author AND prd.voter = rd.voter
-                         AND prd.permlink = rd.permlink AND prd.id < rd.id
-                         --- warning previous votes targeting posts which have been next deleted (before voting again) must be ignored
-                         AND NOT EXISTS (SELECT NULL FROM reptracker_app.deleted_comment_operation_view dp
-                                         WHERE dp.author = rd.author and dp.permlink = rd.permlink and dp.id between prd.id and rd.id)
-                   ORDER BY prd.id DESC LIMIT 1), 0
-          ) AS prev_rshares
-        FROM reptracker_app.hive_reputation_data_view rd
-        WHERE (_first_block_num IS NULL AND _last_block_num IS NULL) OR (rd.block_num BETWEEN _first_block_num AND _last_block_num)
-    )
-    select s.id, s.block_num, s.author, s.permlink, ha.id as author_id, s.voter, hv.id as voter_id, s.rshares, s.prev_rshares
-    from source_data s
-    join hive.accounts_view ha on ha.name = s.author
-    join hive.accounts_view hv on hv.name = s.voter
-    ORDER BY s.id 
+      SELECT prd.id  
+      FROM reptracker_app.hive_reputation_data_view prd
+      WHERE prd.author = up.author AND prd.voter = up.voter
+      AND prd.permlink = up.permlink AND prd.id < up.id
+      ORDER BY prd.id DESC LIMIT 1
+    ) AS prd_id
+  FROM selected_range up
+  ),
+  filter_deleted_comments AS MATERIALIZED 
+  (
+  SELECT prd.up_id, prd.block_num, prd.author, prd.permlink, prd.voter, prd.up_rshares, prd.prd_id,
+    COALESCE(
+      (SELECT 1 
+      FROM 
+        reptracker_app.deleted_comment_operation_view dp
+      WHERE 
+        dp.author = prd.author 
+        AND dp.permlink = prd.permlink 
+        AND prd.prd_id IS NOT NULL
+        AND dp.id between prd.prd_id AND prd.up_id
+      LIMIT 1),0) as filtered
+  FROM filtered_range prd 
+  )
+  SELECT fdc.up_id AS id, fdc.block_num, fdc.author, fdc.permlink, ha.id as author_id, fdc.voter, hv.id as voter_id, fdc.up_rshares AS rshares, 
+    (
+      CASE WHEN fdc.filtered = 0 THEN
+        (
+          SELECT rshares  
+          FROM reptracker_app.hive_reputation_data_view 
+          WHERE id = fdc.prd_id
+        ) 
+      ELSE 
+      0
+      END
+    ) AS prev_rshares
+  FROM filter_deleted_comments fdc
+  JOIN hive.accounts_view ha ON ha.name = fdc.author
+  JOIN hive.accounts_view hv ON hv.name = fdc.voter
+  ORDER BY fdc.up_id
     LOOP
       IF NOT __first_vote_processed THEN
         raise notice 'Data gathered. Starting block range processing...';
