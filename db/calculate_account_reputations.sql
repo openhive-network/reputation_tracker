@@ -50,9 +50,10 @@ BEGIN
   --- In case when pointed range is empty
   _last_processed_block := _last_block_num;
 
-  SELECT INTO __account_reputations ARRAY(SELECT ROW(a.account_id, a.reputation, a.is_implicit, false)::reptracker_app.AccountReputation
+  SELECT ARRAY(SELECT ROW(a.account_id, a.reputation, a.is_implicit, false)::reptracker_app.AccountReputation) 
+  INTO __account_reputations 
   FROM reptracker_app.account_reputations a
-  ORDER BY a.account_id);
+  ORDER BY a.account_id;
 
   FOR __vote_data IN
   WITH selected_range AS MATERIALIZED 
@@ -390,5 +391,142 @@ $BODY$
 ;
 
 GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA reptracker_app TO reputation_tracker_writer_group;
+
+CREATE OR REPLACE FUNCTION reptracker_app.calculate_account_reputations_a(
+  IN _first_block_num integer,
+  IN _last_block_num integer,
+  IN _reporting_step integer,
+  OUT _last_processed_block INTEGER)
+    RETURNS INT
+    LANGUAGE 'plpgsql'
+    VOLATILE 
+    SET from_collapse_limit = 16
+    SET join_collapse_limit = 16
+    SET jit = OFF
+AS $BODY$
+DECLARE
+  __vote_data RECORD;
+  __account_reputations reptracker_app.AccountReputation[];
+  __author_rep bigint;
+  __new_author_rep bigint;
+  __voter_rep bigint;
+  __implicit_voter_rep boolean;
+  __implicit_author_rep boolean;
+  __rshares bigint;
+  __prev_rshares bigint;
+  __rep_delta bigint;
+  __prev_rep_delta bigint;
+  __account_name varchar;
+  __author_idx int;
+  __voter_idx int;
+  __last_reported_block int := 0;
+  __first_vote_processed boolean := false;
+  __debug_log boolean := false;
+BEGIN
+
+IF NOT __first_vote_processed THEN
+  raise notice 'Data gathered. Starting block range processing...';
+  __first_vote_processed := True;
+END IF;
+
+IF __vote_data.block_num % _reporting_step = 0 AND __vote_data.block_num > __last_reported_block THEN
+  raise notice 'Processing block: %', __vote_data.block_num;
+
+  __last_reported_block := __vote_data.block_num;
+
+  EXIT WHEN NOT reptracker_app.continueProcessing();
+
+END IF;
+
+__author_idx := __vote_data.author_id+1;
+__voter_idx := __vote_data.voter_id+1;
+
+__voter_rep := __account_reputations[__voter_idx].reputation;
+__implicit_author_rep := __account_reputations[__author_idx].is_implicit;
+
+__implicit_voter_rep := __account_reputations[__voter_idx].is_implicit;
+
+__author_rep := __account_reputations[__author_idx].reputation;
+__rshares := __vote_data.rshares;
+__prev_rshares := __vote_data.prev_rshares;
+__prev_rep_delta := (__prev_rshares >> 6)::bigint;
+
+IF __debug_log THEN
+  raise notice 'Block: % - Preprocessing a vote: author: `%`, voter: `%` permlink: %', __vote_data.block_num-1, __vote_data.author, __vote_data.voter, __vote_data.permlink;
+
+  --- Author must have set explicit reputation to allow its correction
+  IF NOT __implicit_author_rep AND __prev_rshares != 0 THEN
+    raise notice 'Author `%` reputation (pre-correction): %', __vote_data.author, __author_rep;
+    raise notice 'Author `%` - Correcting a vote: (voter: `%`) rshares: %', __vote_data.author, __vote_data.voter, __vote_data.prev_rshares;
+    raise notice 'Author `%` - Voter `%` reputation: %', __vote_data.author, __vote_data.voter, __voter_rep;
+  END IF;
+END IF;
+
+--- Author must have set explicit reputation to allow its correction
+IF NOT __implicit_author_rep AND __voter_rep >= 0 AND
+    (__prev_rshares > 0 OR
+    --- Voter must have explicitly set reputation to match hived old conditions
+    (__prev_rshares < 0 AND NOT __implicit_voter_rep AND __voter_rep > __author_rep - __prev_rep_delta)) THEN
+      __author_rep := __author_rep - __prev_rep_delta;
+      __implicit_author_rep := __author_rep = 0;
+
+      __account_reputations[__author_idx] := ROW(__vote_data.author_id, __author_rep, __implicit_author_rep, true)::reptracker_app.AccountReputation;
+      
+    IF __debug_log THEN 
+      IF __implicit_author_rep THEN
+        raise notice 'Author `%` reputation (past-correction): implicit-0', __vote_data.author;
+      ELSE
+        raise notice 'Author `%` reputation (past-correction): %', __vote_data.author, __author_rep;
+      END IF;
+    END IF;
+END IF;
+
+__implicit_voter_rep := __account_reputations[__voter_idx].is_implicit;
+--- reread voter's rep. since it can change above if author == voter
+__voter_rep := __account_reputations[__voter_idx].reputation;
+
+IF __debug_log THEN 
+  raise notice 'Block: % - Author `%` - Processing a vote: (voter: `%`) rshares: %', __vote_data.block_num-1, __vote_data.author, __vote_data.voter, __vote_data.rshares;
+  raise notice 'Author `%` - Voter `%` reputation: %', __vote_data.author, __vote_data.voter, __voter_rep;
+END IF;
+
+IF __voter_rep >= 0 AND (__rshares > 0 OR
+    (__rshares < 0 AND NOT __implicit_voter_rep AND __voter_rep > __author_rep)) THEN
+
+  __rep_delta := (__rshares >> 6)::bigint;
+  __new_author_rep = __author_rep + __rep_delta;
+  __account_reputations[__author_idx] := ROW(__vote_data.author_id, __new_author_rep, False, true)::reptracker_app.AccountReputation;
+
+  IF __debug_log THEN 
+    IF __implicit_author_rep THEN
+      raise notice 'Setting a reputation of author: `%` to %', __vote_data.author, __new_author_rep;
+    ELSE
+      raise notice 'Changing reputation of author: `%` from % to %', __vote_data.author, __author_rep, __new_author_rep;
+    END IF;
+  END IF;
+END IF;
+
+_last_processed_block := __vote_data.block_num;
+
+
+INSERT INTO reptracker_app.account_reputations
+  (account_id, reputation, is_implicit)
+SELECT ds.id, ds.reputation, ds.is_implicit
+FROM unnest(__account_reputations) ds
+WHERE ds.Reputation IS NOT NULL AND ds.Changed
+ON CONFLICT (account_id) DO UPDATE
+SET 
+    reputation = EXCLUDED.reputation,
+    is_implicit = EXCLUDED.is_implicit
+;
+
+END
+$BODY$
+;
+
+
+
+
+
 
 RESET ROLE;
