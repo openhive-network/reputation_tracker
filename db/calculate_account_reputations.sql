@@ -63,7 +63,7 @@ BEGIN
       o.op_pos,
       o.body_binary::JSONB as body
   FROM hive.reptracker_app_operations_view o WHERE o.op_type_id = 72 
-  WHERE (_first_block_num IS NULL AND _last_block_num IS NULL) OR (o.block_num BETWEEN _first_block_num AND _last_block_num)  ),
+  AND (_first_block_num IS NULL AND _last_block_num IS NULL) OR (o.block_num BETWEEN _first_block_num AND _last_block_num)  ),
   selected_range AS MATERIALIZED 
   (
   SELECT 
