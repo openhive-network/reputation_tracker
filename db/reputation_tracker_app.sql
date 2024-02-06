@@ -186,7 +186,7 @@ BEGIN
       __block_range_len := __next_block_range.last_block - __next_block_range.first_block + 1;
 
       IF __block_range_len >= __massive_processing_threshold THEN
-        CALL reptracker_app.do_massive_processing(_appContext, __next_block_range.first_block, __next_block_range.last_block, 10000, __last_block);
+        CALL reptracker_app.do_massive_processing(_appContext, __next_block_range.first_block, __next_block_range.last_block, 1000000, __last_block);
       ELSE
         FOR __block IN __next_block_range.first_block .. __next_block_range.last_block LOOP
           CALL reptracker_app.processBlock(__block);

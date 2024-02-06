@@ -55,11 +55,29 @@ BEGIN
   ORDER BY a.account_id);
 
   FOR __vote_data IN
-  WITH selected_range AS MATERIALIZED 
+  WITH select_ef_vote_ops AS MATERIALIZED
   (
-    SELECT rd.id, rd.block_num, rd.author, rd.permlink, rd.voter, rd.rshares
-    FROM reptracker_app.hive_reputation_data_view rd
-    WHERE (_first_block_num IS NULL AND _last_block_num IS NULL) OR (rd.block_num BETWEEN _first_block_num AND _last_block_num)
+  SELECT o.id,
+      o.block_num,
+      o.trx_in_block,
+      o.op_pos,
+      o.body_binary::JSONB as body
+  FROM hive.reptracker_app_operations_view o WHERE o.op_type_id = 72 
+  WHERE (_first_block_num IS NULL AND _last_block_num IS NULL) OR (o.block_num BETWEEN _first_block_num AND _last_block_num)  ),
+  selected_range AS MATERIALIZED 
+  (
+  SELECT 
+    o.id, 
+    o.block_num,     
+    o.body->'value'->>'author' AS author,
+    o.body->'value'->>'voter' AS voter,
+    o.body->'value'->>'permlink' AS permlink,
+    (CASE WHEN jsonb_typeof(o.body->'value'->'rshares') = 'number' THEN
+    (o.body->'value'->'rshares')::bigint
+    ELSE 
+    TRIM(BOTH '"'::text FROM o.body->'value'->>'rshares')::bigint
+    END) AS rshares
+  FROM select_ef_vote_ops o
   ),
   filtered_range AS MATERIALIZED 
   (
@@ -88,31 +106,29 @@ BEGIN
       LIMIT 1),0) as filtered
   FROM filtered_range prd 
   )
-  SELECT fdc.up_id AS id, fdc.block_num, fdc.author, fdc.permlink, ha.id as author_id, fdc.voter, hv.id as voter_id, fdc.up_rshares AS rshares, 
-    COALESCE(
+  SELECT 
+  fdc.up_id AS id,
+  fdc.block_num, 
+  fdc.author, 
+  fdc.permlink, 
+  (SELECT av.id FROM hive.accounts_view av WHERE av.name = fdc.author) as author_id, 
+  fdc.voter, 
+  (SELECT av.id FROM hive.accounts_view av WHERE av.name = fdc.voter) as voter_id, 
+  fdc.up_rshares AS rshares, 
+  COALESCE(
         (
           SELECT rshares  
           FROM reptracker_app.hive_reputation_data_view 
-          WHERE id = fdc.prd_id
+          WHERE id = fdc.prd_id AND fdc.filtered = 1
         ), 0
     ) AS prev_rshares
   FROM filter_deleted_comments fdc
-  JOIN hive.accounts_view ha ON ha.name = fdc.author
-  JOIN hive.accounts_view hv ON hv.name = fdc.voter
   ORDER BY fdc.up_id
+
     LOOP
       IF NOT __first_vote_processed THEN
         raise notice 'Data gathered. Starting block range processing...';
         __first_vote_processed := True;
-      END IF;
-
-      IF __vote_data.block_num % _reporting_step = 0 AND __vote_data.block_num > __last_reported_block THEN
-         raise notice 'Processing block: %', __vote_data.block_num;
-
-         __last_reported_block := __vote_data.block_num;
-
-         EXIT WHEN NOT reptracker_app.continueProcessing();
-
       END IF;
 
       __author_idx := __vote_data.author_id+1;
