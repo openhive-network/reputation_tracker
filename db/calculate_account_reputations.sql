@@ -81,48 +81,40 @@ BEGIN
   ),
   filtered_range AS MATERIALIZED 
   (
-  SELECT up.id AS up_id, up.block_num, up.author, up.permlink, up.voter, up.rshares AS up_rshares,
-    (
-      SELECT prd.id  
-      FROM reptracker_app.hive_reputation_data_view prd
-      WHERE prd.author = up.author AND prd.voter = up.voter
-      AND prd.permlink = up.permlink AND prd.id < up.id
-      ORDER BY prd.id DESC LIMIT 1
-    ) AS prd_id
+  SELECT 
+		up.id AS up_id,
+		up.block_num, 
+		up.author, 
+		up.permlink, 
+		up.voter, 
+		up.rshares AS up_rshares,  
+		COALESCE((
+			SELECT prd.rshares
+			FROM reptracker_app.hive_reputation_data_view prd
+			WHERE 
+				prd.author = up.author AND 
+				prd.voter = up.voter AND 
+				prd.permlink = up.permlink AND 
+				prd.id < up.id AND 
+				NOT EXISTS (SELECT NULL FROM reptracker_app.deleted_comment_operation_view dp
+			WHERE dp.author = up.author and dp.permlink = up.permlink and dp.id between prd.id and up.id)
+			ORDER BY prd.id DESC LIMIT 1
+		), 0) AS prev_rshares
   FROM selected_range up
-  ),
-  filter_deleted_comments AS MATERIALIZED 
-  (
-  SELECT prd.up_id, prd.block_num, prd.author, prd.permlink, prd.voter, prd.up_rshares, prd.prd_id,
-    COALESCE(
-      (SELECT 1 
-      FROM 
-        reptracker_app.deleted_comment_operation_view dp
-      WHERE 
-        dp.author = prd.author 
-        AND dp.permlink = prd.permlink 
-        AND prd.prd_id IS NOT NULL
-        AND dp.id between prd.prd_id AND prd.up_id
-      LIMIT 1),0) as filtered
-  FROM filtered_range prd 
   )
   SELECT 
   fdc.up_id AS id,
   fdc.block_num, 
-  fdc.author, 
+  fdc.author,
+  ha.id as author_id,
   fdc.permlink, 
-  (SELECT av.id FROM hive.accounts_view av WHERE av.name = fdc.author) as author_id, 
   fdc.voter, 
-  (SELECT av.id FROM hive.accounts_view av WHERE av.name = fdc.voter) as voter_id, 
+  hv.id as voter_id,
   fdc.up_rshares AS rshares, 
-  COALESCE(
-        (
-          SELECT rshares  
-          FROM reptracker_app.hive_reputation_data_view 
-          WHERE id = fdc.prd_id AND fdc.filtered = 1
-        ), 0
-    ) AS prev_rshares
-  FROM filter_deleted_comments fdc
+  fdc.prev_rshares
+  FROM filtered_range fdc
+  join hive.accounts_view ha on ha.name = fdc.author
+  join hive.accounts_view hv on hv.name = fdc.voter
   ORDER BY fdc.up_id
 
     LOOP
