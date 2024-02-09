@@ -58,7 +58,7 @@ $$
 ;
 
 
-CREATE OR REPLACE PROCEDURE reptracker_app.do_massive_processing(IN _appContext VARCHAR, in _from INT, in _to INT, IN _step INT, OUT _last_block integer)
+CREATE OR REPLACE PROCEDURE reptracker_app.do_massive_processing(IN _appContext VARCHAR, in _from INT, in _to INT, IN _step INT, INOUT _last_block integer)
 LANGUAGE 'plpgsql'
 AS
 $$
@@ -80,32 +80,20 @@ BEGIN
 
     RAISE NOTICE 'Attempting to process a block range: <%, %>', b, _last_block;
 
-    _last_block := reptracker_app.update_account_reputations(b, _last_block, 1000);
+    _last_block :=  reptracker_app.update_account_reputations(b, _last_block, 1000);
 
     COMMIT;
 
-    RAISE NOTICE 'Block range: <%, %> processed successfully.', b, _last_block;
+    RAISE NOTICE 'Block range: <%, %> processed successfully.
+    ', b, _last_block;
 
     EXIT WHEN NOT reptracker_app.continueProcessing();
 
   END LOOP;
 
-
-  IF reptracker_app.continueProcessing() AND _last_block < _to THEN
-    RAISE NOTICE 'Attempting to process a block range (rest): <%, %>', _last_block+1, _to;
-    
-    --- Supplement last part of range if anything left.
-    _final_block := reptracker_app.update_account_reputations(_last_block+1, _to, 1000);
-
-    COMMIT;
-    RAISE NOTICE 'Block range: <%, %> processed successfully.', _last_block+1, _final_block;
-
-    _last_block := _final_block;
-  END IF;
-
   RAISE NOTICE 'Attaching HAF application context at block: %.', _last_block;
   PERFORM hive.app_context_attach(_appContext, _last_block);
-  COMMIT;
+
  --- You should enable here all things previously disabled at begin of this function...
 
  RAISE NOTICE 'Leaving massive processing of block range: <%, %>...', _from, _last_block;
@@ -186,7 +174,7 @@ BEGIN
       __block_range_len := __next_block_range.last_block - __next_block_range.first_block + 1;
 
       IF __block_range_len >= __massive_processing_threshold THEN
-        CALL reptracker_app.do_massive_processing(_appContext, __next_block_range.first_block, __next_block_range.last_block, 1000000, __last_block);
+        CALL reptracker_app.do_massive_processing(_appContext, __next_block_range.first_block, __next_block_range.last_block, 100000, __last_block);
       ELSE
         FOR __block IN __next_block_range.first_block .. __next_block_range.last_block LOOP
           CALL reptracker_app.processBlock(__block);
