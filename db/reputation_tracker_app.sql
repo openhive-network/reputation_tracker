@@ -1,4 +1,4 @@
-SET ROLE reptracker_app_owner;
+SET ROLE reptracker_owner;
 
 --- Helper function telling application main-loop to continue execution.
 CREATE OR REPLACE FUNCTION reptracker_app.continueProcessing()
@@ -69,11 +69,17 @@ BEGIN
   RAISE NOTICE 'Detaching HAF application context...';
   PERFORM hive.app_context_detach(_appContext);
 
-  INSERT INTO reptracker_app.account_reputations
-  (account_id, reputation, is_implicit)
-  SELECT ha.id, 0, true
+  WITH select_account_reputations AS MATERIALIZED
+  (
+  SELECT ha.id AS ha_id, 0, true, ar.account_id as ar_id
   FROM hive.accounts_view ha
-  WHERE NOT EXISTS (SELECT NULL FROM reptracker_app.account_reputations ar WHERE ar.account_id = ha.id)
+  LEFT JOIN reptracker_app.account_reputations ar ON ar.account_id = ha.id
+  )
+  INSERT INTO reptracker_app.account_reputations
+    (account_id, reputation, is_implicit)
+  SELECT sar.ha_id, 0, true
+  FROM select_account_reputations sar
+  WHERE sar.ar_id IS NULL
   ;
 
   --- You can do here also other things to speedup your app, i.e. disable constrains, remove indexes etc.
@@ -87,8 +93,9 @@ BEGIN
 
     RAISE NOTICE 'Attempting to process a block range: <%, %>', b, _last_block;
 
-    _last_block :=  reptracker_app.update_account_reputations(b, _last_block, 1000);
+    PERFORM reptracker_app.calculate_account_reputations(b, _last_block);
 
+    PERFORM reptracker_app.storeLastProcessedBlock(_last_block);
     COMMIT;
 
     RAISE NOTICE 'Block range: <%, %> processed successfully.
@@ -113,19 +120,18 @@ LANGUAGE 'plpgsql'
 AS
 $$
 DECLARE
-  __last_block integer;
-
   __start_ts timestamptz;
   __end_ts   timestamptz;
 BEGIN
   RAISE NOTICE 'Processing block: %...', _block;
   __start_ts := clock_timestamp();
-  __last_block := reptracker_app.update_account_reputations(_block, _block, 1000);
-  PERFORM reptracker_app.storeLastProcessedBlock(__last_block);
+  PERFORM reptracker_app.calculate_account_reputations(_block, _block);
+  PERFORM reptracker_app.storeLastProcessedBlock(_block);
   COMMIT; -- For single block processing we want to commit all changes for each one.
   __end_ts := clock_timestamp();
 
-  RAISE NOTICE 'Done in time: % ms', 1000 * (extract(epoch FROM __end_ts - __start_ts));
+  RAISE NOTICE 'Done in time: % ms
+  ', 1000 * (extract(epoch FROM __end_ts - __start_ts));
 END
 $$
 ;
@@ -181,7 +187,7 @@ BEGIN
       __block_range_len := __next_block_range.last_block - __next_block_range.first_block + 1;
 
       IF __block_range_len >= __massive_processing_threshold THEN
-        CALL reptracker_app.do_massive_processing(_appContext, __next_block_range.first_block, __next_block_range.last_block, 100000, __last_block);
+        CALL reptracker_app.do_massive_processing(_appContext, __next_block_range.first_block, __next_block_range.last_block, 10000, __last_block);
       ELSE
         FOR __block IN __next_block_range.first_block .. __next_block_range.last_block LOOP
           CALL reptracker_app.processBlock(__block);

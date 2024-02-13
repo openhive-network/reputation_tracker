@@ -64,9 +64,9 @@ while [ $# -gt 0 ]; do
 done
 
 if [ -z "$POSTGRES_URL" ]; then
-  POSTGRES_ACCESS="postgresql://reptracker_app_owner@$POSTGRES_HOST:$POSTGRES_PORT/haf_block_log"
+  POSTGRES_ACCESS="postgresql://reptracker_owner@$POSTGRES_HOST:$POSTGRES_PORT/haf_block_log"
 else
   POSTGRES_ACCESS=$POSTGRES_URL
 fi
 
-psql $POSTGRES_ACCESS -v ON_ERROR_STOP=on -U reptracker_app_owner -c '\timing' -c "CALL reptracker_app.main('reptracker_app', $MAX_BLOCK_LIMIT);" 2>&1 | ts '%Y-%m-%d %H:%M:%.S'
+psql $POSTGRES_ACCESS -v ON_ERROR_STOP=on -U reptracker_owner -c '\timing' -c "CALL reptracker_app.main('reptracker_app', $MAX_BLOCK_LIMIT);" 2>&1 | ts '%Y-%m-%d %H:%M:%.S'

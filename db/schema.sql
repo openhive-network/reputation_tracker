@@ -1,9 +1,9 @@
-SET ROLE reptracker_app_owner;
+SET ROLE reptracker_owner;
 
 DO $$
 BEGIN
 
-CREATE SCHEMA reptracker_app AUTHORIZATION reptracker_app_owner;
+CREATE SCHEMA reptracker_app AUTHORIZATION reptracker_owner;
 
 RAISE NOTICE 'Attempting to create an application schema tables...';
 
@@ -32,25 +32,6 @@ CREATE TABLE IF NOT EXISTS reptracker_app.account_reputations
     CONSTRAINT PK_account_reputations PRIMARY KEY (account_id)
 )
 INHERITS (hive.reptracker_app)
-;
-
-CREATE UNLOGGED TABLE IF NOT EXISTS reptracker_app.__new_reputation_data
-(
-    id bigint,
-    author_id int,
-    voter_id int,
-    rshares bigint,
-    prev_rshares bigint
-)
-;
-
-CREATE UNLOGGED TABLE IF NOT EXISTS reptracker_app.__tmp_accounts
-(
-    id integer,
-    reputation bigint,
-    is_implicit boolean,
-    changed boolean
-)
 ;
 
 EXCEPTION WHEN duplicate_schema THEN RAISE NOTICE '%, skipping', SQLERRM USING ERRCODE = SQLSTATE;
@@ -100,9 +81,6 @@ GRANT USAGE ON SCHEMA reptracker_app TO reputation_tracker_writer_group;
 --- Only data writers can write to such table(s)
 GRANT ALL ON reptracker_app.app_status TO reputation_tracker_writer_group;
 GRANT ALL ON reptracker_app.account_reputations TO reputation_tracker_writer_group;
-GRANT ALL ON reptracker_app.__new_reputation_data TO reputation_tracker_writer_group;
-GRANT ALL ON reptracker_app.__tmp_accounts TO reputation_tracker_writer_group;
-
 RESET ROLE;
 
 CREATE INDEX IF NOT EXISTS stable_id_block_num_effective_vote_idx

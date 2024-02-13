@@ -87,8 +87,8 @@ EOF
 if [ ${DROP_ALL} -eq 1 ]; then
   echo "Attempting to drop roles & indexes built by application"
 
-  psql -aw $POSTGRES_ACCESS -v ON_ERROR_STOP=on -c 'DROP OWNED BY reptracker_app_owner CASCADE;' || true
-  psql -aw $POSTGRES_ACCESS -v ON_ERROR_STOP=on -c 'DROP ROLE IF EXISTS reptracker_app_owner, reputation_tracker_writer_group;'
+  psql -aw $POSTGRES_ACCESS -v ON_ERROR_STOP=on -c 'DROP OWNED BY reptracker_owner CASCADE;' || true
+  psql -aw $POSTGRES_ACCESS -v ON_ERROR_STOP=on -c 'DROP ROLE IF EXISTS reptracker_owner, reputation_tracker_writer_group;'
 
   psql -aw $POSTGRES_ACCESS -v ON_ERROR_STOP=on -c 'DROP INDEX IF EXISTS hive.effective_comment_vote_idx;'
   psql -aw $POSTGRES_ACCESS -v ON_ERROR_STOP=on -c 'DROP INDEX IF EXISTS hive.delete_comment_op_idx;'

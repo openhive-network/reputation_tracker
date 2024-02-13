@@ -1,4 +1,4 @@
-SET ROLE reptracker_app_owner;
+SET ROLE reptracker_owner;
 
 DROP TYPE IF EXISTS reptracker_app.AccountReputation CASCADE;
 
@@ -6,19 +6,12 @@ CREATE TYPE reptracker_app.AccountReputation AS (id int, reputation bigint, is_i
 
 DROP FUNCTION IF EXISTS reptracker_app.calculate_account_reputations;
 
--- 1. 3.44s -- podstawa
--- 2. 3.08s -- zmiana na CTE w update_account_reputations
--- 3. 2.32s -- zmiana na CTE w calculate_account_reputations
--- 4. 2.30s -- zmiana na id w indexach i views z calculate_operation_stable_id
-
 --- Massive version of account reputation calculation.
 CREATE OR REPLACE FUNCTION reptracker_app.calculate_account_reputations(
   IN _first_block_num integer,
-  IN _last_block_num integer,
-  IN _reporting_step integer,
-  OUT _last_processed_block INTEGER,
-  _tracked_account character varying DEFAULT NULL::character varying)
-    RETURNS INT
+  IN _last_block_num integer
+)
+    RETURNS VOID
     LANGUAGE 'plpgsql'
     VOLATILE 
     SET from_collapse_limit = 16
@@ -97,186 +90,11 @@ BEGIN
 
   SELECT COUNT(*) FROM balance_change INTO _result;
 
-  _last_processed_block := _last_block_num;
-
 END
 $BODY$
 ;
 
-DROP FUNCTION IF EXISTS reptracker_app.calculate_account_reputations_for_block;
-
-
-CREATE OR REPLACE FUNCTION reptracker_app.calculate_account_reputations_for_block(IN _block_num INT, OUT _last_processed_block INT, IN _tracked_account VARCHAR DEFAULT NULL::VARCHAR)
-  RETURNS INT
-  LANGUAGE 'plpgsql'
-  VOLATILE
-  SET from_collapse_limit = 16
-  SET join_collapse_limit = 16
-  SET jit = OFF
-  SET cursor_tuple_fraction=0.9
-AS $BODY$
-DECLARE
-  __vote_data RECORD;
-  __author_rep bigint;
-  __new_author_rep bigint;
-  __voter_rep bigint;
-  __implicit_voter_rep boolean;
-  __implicit_author_rep boolean;
-  __author_rep_changed boolean := false;
-  __rshares bigint;
-  __prev_rshares bigint;
-  __rep_delta bigint;
-  __prev_rep_delta bigint;
-  __traced_author int;
-  __account_name varchar;
-BEGIN
-
-  DELETE FROM reptracker_app.__new_reputation_data;
-
-  INSERT INTO reptracker_app.__new_reputation_data
-    with source_data as materialized
-    (
-    SELECT rd.id, rd.block_num, rd.author, rd.voter, rd.rshares,
-          COALESCE((SELECT prd.rshares
-                   FROM reptracker_app.hive_reputation_data_view prd
-                   WHERE prd.author = rd.author AND prd.voter = rd.voter
-                         AND prd.permlink = rd.permlink AND prd.id < rd.id
-                         --- warning previous votes targeting posts which have been next deleted (before voting again) must be ignored
-                         AND NOT EXISTS (SELECT NULL FROM reptracker_app.deleted_comment_operation_view dp
-                                         WHERE dp.author = rd.author and dp.permlink = rd.permlink and dp.id between prd.id and rd.id)
-                   ORDER BY prd.id DESC LIMIT 1), 0
-          ) AS prev_rshares
-        FROM reptracker_app.hive_reputation_data_view rd
-        WHERE rd.block_num = _block_num
-    )
-    select s.id, ha.id as author_id, hv.id as voter_id, s.rshares, s.prev_rshares
-    from source_data s
-    join hive.accounts_view ha on ha.name = s.author
-    join hive.accounts_view hv on hv.name = s.voter
-    ORDER BY s.id 
-    ;
-
-
-  DELETE FROM reptracker_app.__tmp_accounts;
-
-  INSERT INTO reptracker_app.__tmp_accounts
-  SELECT ha.account_id, ha.reputation, ha.is_implicit, false AS changed
-  FROM reptracker_app.__new_reputation_data rd
-  JOIN reptracker_app.account_reputations ha on rd.author_id = ha.account_id
-  UNION
-  SELECT hv.account_id, hv.reputation, hv.is_implicit, false as changed
-  FROM reptracker_app.__new_reputation_data rd
-  JOIN reptracker_app.account_reputations hv on rd.voter_id = hv.account_id
-  ;
-
-  SELECT COALESCE((SELECT ha.id FROM hive.accounts ha WHERE ha.name = _tracked_account), 0) INTO __traced_author;
-
-  FOR __vote_data IN
-      SELECT rd.id, rd.author_id, rd.voter_id, rd.rshares, rd.prev_rshares
-      FROM reptracker_app.__new_reputation_data rd
-      ORDER BY rd.id
-    LOOP
-      SELECT INTO __voter_rep, __implicit_voter_rep ha.reputation, ha.is_implicit 
-      FROM reptracker_app.__tmp_accounts ha where ha.id = __vote_data.voter_id;
-      SELECT INTO __author_rep, __implicit_author_rep ha.reputation, ha.is_implicit 
-      FROM reptracker_app.__tmp_accounts ha where ha.id = __vote_data.author_id;
-
-      IF __vote_data.author_id = __traced_author THEN
-           raise notice 'Processing vote <%> rshares: %, prev_rshares: %', __vote_data.id, __vote_data.rshares, __vote_data.prev_rshares;
-       select ha.name into __account_name from hive.accounts ha where ha.id = __vote_data.voter_id;
-       raise notice 'Voter % (%) reputation: %', __account_name, __vote_data.voter_id,  __voter_rep;
-      END IF;
-      CONTINUE WHEN __voter_rep < 0;
-    
-      __rshares := __vote_data.rshares;
-      __prev_rshares := __vote_data.prev_rshares;
-      __prev_rep_delta := (__prev_rshares >> 6)::bigint;
-
-      IF NOT __implicit_author_rep AND --- Author must have set explicit reputation to allow its correction
-         (__prev_rshares > 0 OR
-          --- Voter must have explicitly set reputation to match hived old conditions
-         (__prev_rshares < 0 AND NOT __implicit_voter_rep AND __voter_rep > __author_rep - __prev_rep_delta)) THEN
-            __author_rep := __author_rep - __prev_rep_delta;
-            __implicit_author_rep := __author_rep = 0;
-            __author_rep_changed = true;
-            if __vote_data.author_id = __vote_data.voter_id THEN
-              __implicit_voter_rep := __implicit_author_rep;
-              __voter_rep := __author_rep;
-            end if;
-
-            IF __vote_data.author_id = __traced_author THEN
-             raise notice 'Corrected author_rep by prev_rep_delta: % to have reputation: %', __prev_rep_delta, __author_rep;
-            END IF;
-      END IF;
-    
-      IF __rshares > 0 OR
-         (__rshares < 0 AND NOT __implicit_voter_rep AND __voter_rep > __author_rep) THEN
-
-        __rep_delta := (__rshares >> 6)::bigint;
-        __new_author_rep = __author_rep + __rep_delta;
-        __author_rep_changed = true;
-
-        UPDATE reptracker_app.__tmp_accounts
-        SET reputation = __new_author_rep,
-            is_implicit = False,
-            changed = true
-        WHERE id = __vote_data.author_id;
-
-        IF __vote_data.author_id = __traced_author THEN
-          raise notice 'Changing account: <%> reputation from % to %', __vote_data.author_id, __author_rep, __new_author_rep;
-        END IF;
-      ELSE
-        IF __vote_data.author_id = __traced_author THEN
-            raise notice 'Ignoring reputation change due to unmet conditions... Author_rep: %, Voter_rep: %', __author_rep, __voter_rep;
-        END IF;
-      END IF;
-    END LOOP;
-
-    _last_processed_block := _block_num;
-
-  INSERT INTO reptracker_app.account_reputations
-    (account_id, reputation, is_implicit)
-  SELECT ds.id, ds.reputation, ds.is_implicit
-  FROM reptracker_app.__tmp_accounts ds
-  WHERE ds.Reputation IS NOT NULL AND ds.Changed
-  ON CONFLICT (account_id) DO UPDATE
-  SET 
-      reputation = EXCLUDED.reputation,
-      is_implicit = EXCLUDED.is_implicit
-  ;
-
-END
-$BODY$
-;
-
-DROP FUNCTION IF EXISTS reptracker_app.update_account_reputations;
-
-CREATE OR REPLACE FUNCTION reptracker_app.update_account_reputations(
-  in _first_block_num INTEGER,
-  in _last_block_num INTEGER,
-  IN _reporting_step INTEGER,
-  OUT _last_processed_block INTEGER)
-  RETURNS INT
-  LANGUAGE 'plpgsql'
-  VOLATILE
-  SET from_collapse_limit = 16
-  SET join_collapse_limit = 16
-  SET jit = OFF
-AS $BODY$
-BEGIN
-
-  IF _first_block_num IS NULL OR _last_block_num IS NULL OR _first_block_num != _last_block_num THEN
-    _last_processed_block := reptracker_app.calculate_account_reputations(_first_block_num, _last_block_num, _reporting_step);
-  ELSE
-    _last_processed_block := reptracker_app.calculate_account_reputations_for_block(_first_block_num);
-  END IF;
-
-END
-$BODY$
-;
-
-GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA reptracker_app TO reputation_tracker_writer_group;
-
+DROP FUNCTION IF EXISTS reptracker_app.calculate_account_reputations_a;
 
 CREATE OR REPLACE FUNCTION reptracker_app.calculate_account_reputations_a(
     _id BIGINT,
@@ -418,6 +236,7 @@ END IF;
 
 */
 
+GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA reptracker_app TO reputation_tracker_writer_group;
 
 
 RESET ROLE;
