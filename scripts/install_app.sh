@@ -64,6 +64,10 @@ else
 fi
 
 psql $POSTGRES_ACCESS -v ON_ERROR_STOP=on -f "${SRCPATH}/db/builtin_roles.sql"
-psql $POSTGRES_ACCESS -v ON_ERROR_STOP=on -f "${SRCPATH}/db/schema.sql"
-psql $POSTGRES_ACCESS -v ON_ERROR_STOP=on -f "${SRCPATH}/db/calculate_account_reputations.sql"
-psql $POSTGRES_ACCESS -v ON_ERROR_STOP=on -f "${SRCPATH}/db/reputation_tracker_app.sql"
+psql $POSTGRES_ACCESS -v ON_ERROR_STOP=on -f "${SRCPATH}/db/database_schema.sql"
+psql $POSTGRES_ACCESS -v ON_ERROR_STOP=on -f "${SRCPATH}/db/rep_views.sql"
+psql $POSTGRES_ACCESS -v ON_ERROR_STOP=on -f "${SRCPATH}/db/rep_indexes.sql"
+psql $POSTGRES_ACCESS -v ON_ERROR_STOP=on -f "${SRCPATH}/db/process_block_range.sql"
+psql $POSTGRES_ACCESS -v ON_ERROR_STOP=on -f "${SRCPATH}/db/rep_helpers.sql"
+psql $POSTGRES_ACCESS -v ON_ERROR_STOP=on -f "${SRCPATH}/db/main_loop.sql"
+

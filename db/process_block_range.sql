@@ -160,7 +160,6 @@ BEGIN
         __implicit_voter_rep := __implicit_author_rep;
     --- reread voter's rep. since it can change above if author == voter
         __voter_rep := __author_rep;
-        --RAISE NOTICE '%, %', _author_id, _voter;
       END IF;
 
     __account_reputations[1] := ROW(_author_id, __author_rep, __implicit_author_rep, true)::reptracker_app.AccountReputation;
