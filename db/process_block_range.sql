@@ -70,21 +70,37 @@ BEGIN
 		), 0) AS prev_rshares
   FROM selected_range up
   ),
-  balance_change AS MATERIALIZED 
+  join_hive_accounts AS MATERIALIZED 
   (
-    SELECT reptracker_app.calculate_account_reputations_a(  
+    SELECT 
         ja.up_id,
         ja.block_num, 
-        ja.author,
-        ha.id,
+        ha.id AS author_id,
         ja.permlink, 
-        ja.voter, 
-        hv.id,
+        hv.id AS voter_id,
         ja.up_rshares, 
-        ja.prev_rshares)
+        ja.prev_rshares
     FROM filtered_range ja
     JOIN hive.accounts_view ha on ha.name = ja.author
     JOIN hive.accounts_view hv on hv.name = ja.voter
+  ),
+  balance_change AS MATERIALIZED 
+  (
+    SELECT reptracker_app.calculate_account_reputations_a( 
+        ja.up_id,
+        ja.block_num, 
+        ja.author_id,
+        COALESCE(arai.reputation, 0),
+        COALESCE(arai.is_implicit, true),
+        ja.permlink, 
+        ja.voter_id,
+        COALESCE(arvi.reputation,0),
+        COALESCE(arvi.is_implicit,true),
+        ja.up_rshares, 
+        ja.prev_rshares)
+    FROM join_hive_accounts ja
+    LEFT JOIN reptracker_app.account_reputations arai ON arai.account_id = ja.author_id
+    LEFT JOIN reptracker_app.account_reputations arvi ON arvi.account_id = ja.voter_id
     ORDER BY ja.up_id
   )
 
@@ -99,11 +115,13 @@ DROP FUNCTION IF EXISTS reptracker_app.calculate_account_reputations_a;
 CREATE OR REPLACE FUNCTION reptracker_app.calculate_account_reputations_a(
     _id BIGINT,
     _block_num INT,
-    _author TEXT,
     _author_id INT,
+    _author_rep BIGINT,
+    _implicit_author_rep BOOLEAN,
     _permlink TEXT,
-    _voter TEXT,
     _voter_id INT,
+    _voter_rep BIGINT,
+    _implicit_voter_rep BOOLEAN,
     _rshares BIGINT,
     _prev_rshares BIGINT
   )
@@ -115,79 +133,46 @@ CREATE OR REPLACE FUNCTION reptracker_app.calculate_account_reputations_a(
     SET jit = OFF
 AS $BODY$
 DECLARE
-  __account_reputations reptracker_app.AccountReputation[];
-  __author_rep bigint;
+  __account_reputations reptracker_app.AccountReputation;
   __new_author_rep bigint;
-  __voter_rep bigint;
-  __implicit_voter_rep boolean;
-  __implicit_author_rep boolean;
-  __rep_delta bigint;
-  __prev_rep_delta bigint;
-  __account_name varchar;
-  __prev_rshares BIGINT;
-  __rshares BIGINT;
+  __prev_rep_delta bigint := (_prev_rshares >> 6)::BIGINT;
   __debug_log boolean := false;
 BEGIN
-
-  SELECT INTO __account_reputations
-  ARRAY(SELECT ROW(default_values.account_id, COALESCE(ad.reputation, 0), COALESCE(ad.is_implicit, true), false)::reptracker_app.AccountReputation 
-  FROM 
-    (SELECT * FROM reptracker_app.account_reputations WHERE account_id = _author_id or account_id = _voter_id) AS ad
-  RIGHT JOIN 
-    (SELECT _author_id as account_id
-	 UNION ALL 
-	 SELECT _voter_id as account_id) AS default_values
-  ON 
-    ad.account_id = default_values.account_id);
-
-  __rshares := _rshares;
-  __prev_rshares := _prev_rshares;
-  __author_rep := __account_reputations[1].reputation;
-  __voter_rep := __account_reputations[2].reputation;
-  __implicit_author_rep := __account_reputations[1].is_implicit;
-  __implicit_voter_rep := __account_reputations[2].is_implicit;
-  __prev_rep_delta := (__prev_rshares >> 6)::bigint;
-
+  SELECT _author_id, _author_rep, _implicit_author_rep, false INTO __account_reputations;
       --- Author must have set explicit reputation to allow its correction
-  IF NOT __implicit_author_rep AND __voter_rep >= 0 AND (__prev_rshares > 0 OR
       --- Voter must have explicitly set reputation to match hived old conditions
-      (__prev_rshares < 0 AND NOT __implicit_voter_rep AND __voter_rep > __author_rep - __prev_rep_delta)) THEN
-
-    __author_rep := __author_rep - __prev_rep_delta;
-    __implicit_author_rep := __author_rep = 0;
+  IF NOT _implicit_author_rep AND _voter_rep >= 0 AND (_prev_rshares > 0 OR (_prev_rshares < 0 AND NOT _implicit_voter_rep AND _voter_rep > _author_rep - __prev_rep_delta)) THEN
+    _author_rep := _author_rep - __prev_rep_delta;
+    _implicit_author_rep := _author_rep = 0;
 
       IF _voter_id = _author_id THEN 
-        __implicit_voter_rep := __implicit_author_rep;
+        _implicit_voter_rep := _implicit_author_rep;
     --- reread voter's rep. since it can change above if author == voter
-        __voter_rep := __author_rep;
+        _voter_rep := _author_rep;
       END IF;
 
-    __account_reputations[1] := ROW(_author_id, __author_rep, __implicit_author_rep, true)::reptracker_app.AccountReputation;
+    SELECT _author_id, _author_rep, _implicit_author_rep, true INTO __account_reputations;
   END IF;
 
-  IF 
-  __voter_rep >= 0 AND 
-  (__rshares > 0 OR 
-  (__rshares < 0 AND NOT __implicit_voter_rep AND __voter_rep > __author_rep)) THEN
-
-    __rep_delta := (__rshares >> 6)::bigint;
-    __new_author_rep = __author_rep + __rep_delta;
-    __account_reputations[1] := ROW(_author_id, __new_author_rep, False, true)::reptracker_app.AccountReputation;
+  IF _voter_rep >= 0 AND (_rshares > 0 OR (_rshares < 0 AND NOT _implicit_voter_rep AND _voter_rep > _author_rep)) THEN
+    __new_author_rep = _author_rep + (_rshares >> 6)::BIGINT;
+    SELECT _author_id, __new_author_rep, false, true INTO __account_reputations;
   END IF;
 
-  INSERT INTO reptracker_app.account_reputations
-    (account_id, reputation, is_implicit)
-  SELECT ds.id, ds.reputation, ds.is_implicit
-  FROM unnest(__account_reputations) ds
-  WHERE ds.reputation IS NOT NULL AND ds.changed
-  ON CONFLICT (account_id) DO UPDATE
-  SET 
-      reputation = EXCLUDED.reputation,
-      is_implicit = EXCLUDED.is_implicit
-  ;
+  IF __account_reputations.changed AND  __account_reputations.reputation IS NOT NULL THEN  
+    INSERT INTO reptracker_app.account_reputations
+      (account_id, reputation, is_implicit)
+    SELECT __account_reputations.id, __account_reputations.reputation, __account_reputations.is_implicit
+    ON CONFLICT (account_id) DO UPDATE
+    SET 
+        reputation = EXCLUDED.reputation,
+        is_implicit = EXCLUDED.is_implicit;
+  END IF;
+
 END
 $BODY$
 ;
+
 
 /*
 __author_idx := __vote_data.author_id+1;
