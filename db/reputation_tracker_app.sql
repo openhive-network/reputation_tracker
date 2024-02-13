@@ -69,6 +69,13 @@ BEGIN
   RAISE NOTICE 'Detaching HAF application context...';
   PERFORM hive.app_context_detach(_appContext);
 
+  INSERT INTO reptracker_app.account_reputations
+  (account_id, reputation, is_implicit)
+  SELECT ha.id, 0, true
+  FROM hive.accounts_view ha
+  WHERE NOT EXISTS (SELECT NULL FROM reptracker_app.account_reputations ar WHERE ar.account_id = ha.id)
+  ;
+
   --- You can do here also other things to speedup your app, i.e. disable constrains, remove indexes etc.
 
   FOR b IN _from .. _to BY _step LOOP

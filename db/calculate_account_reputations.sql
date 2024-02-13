@@ -38,7 +38,7 @@ BEGIN
       o.op_pos,
       o.body_binary::JSONB as body
   FROM hive.reptracker_app_operations_view o WHERE o.op_type_id = 72 
-  AND (_first_block_num IS NULL AND _last_block_num IS NULL) OR (o.block_num BETWEEN _first_block_num AND _last_block_num)  ),
+  AND o.block_num BETWEEN _first_block_num AND _last_block_num ),
   selected_range AS MATERIALIZED 
   (
   SELECT 
@@ -331,21 +331,27 @@ BEGIN
   __prev_rep_delta := (__prev_rshares >> 6)::bigint;
 
       --- Author must have set explicit reputation to allow its correction
-  IF NOT __implicit_author_rep AND __voter_rep >= 0 AND
-      (__prev_rshares > 0 OR
+  IF NOT __implicit_author_rep AND __voter_rep >= 0 AND (__prev_rshares > 0 OR
       --- Voter must have explicitly set reputation to match hived old conditions
       (__prev_rshares < 0 AND NOT __implicit_voter_rep AND __voter_rep > __author_rep - __prev_rep_delta)) THEN
-        __author_rep := __author_rep - __prev_rep_delta;
-        __implicit_author_rep := __author_rep = 0;
 
-        __account_reputations[1] := ROW(_author_id, __author_rep, __implicit_author_rep, true)::reptracker_app.AccountReputation;
+    __author_rep := __author_rep - __prev_rep_delta;
+    __implicit_author_rep := __author_rep = 0;
+
+      IF _voter_id = _author_id THEN 
+        __implicit_voter_rep := __implicit_author_rep;
+    --- reread voter's rep. since it can change above if author == voter
+        __voter_rep := __author_rep;
+        --RAISE NOTICE '%, %', _author_id, _voter;
+      END IF;
+
+    __account_reputations[1] := ROW(_author_id, __author_rep, __implicit_author_rep, true)::reptracker_app.AccountReputation;
   END IF;
 
-  __implicit_voter_rep := __account_reputations[2].is_implicit;
-  --- reread voter's rep. since it can change above if author == voter
-
-  IF __voter_rep >= 0 AND (__rshares > 0 OR
-      (__rshares < 0 AND NOT __implicit_voter_rep AND __voter_rep > __author_rep)) THEN
+  IF 
+  __voter_rep >= 0 AND 
+  (__rshares > 0 OR 
+  (__rshares < 0 AND NOT __implicit_voter_rep AND __voter_rep > __author_rep)) THEN
 
     __rep_delta := (__rshares >> 6)::bigint;
     __new_author_rep = __author_rep + __rep_delta;
@@ -365,6 +371,53 @@ BEGIN
 END
 $BODY$
 ;
+
+/*
+__author_idx := __vote_data.author_id+1;
+__voter_idx := __vote_data.voter_id+1;
+
+__voter_rep := __account_reputations[__voter_idx].reputation;
+__implicit_author_rep := __account_reputations[__author_idx].is_implicit;
+
+__implicit_voter_rep := __account_reputations[__voter_idx].is_implicit;
+
+__author_rep := __account_reputations[__author_idx].reputation;
+__rshares := __vote_data.rshares;
+__prev_rshares := __vote_data.prev_rshares;
+__prev_rep_delta := (__prev_rshares >> 6)::bigint;
+
+
+--- Author must have set explicit reputation to allow its correction
+IF 
+NOT __implicit_author_rep AND __voter_rep >= 0 AND (__prev_rshares > 0 OR
+    --- Voter must have explicitly set reputation to match hived old conditions
+    (__prev_rshares < 0 AND NOT __implicit_voter_rep AND __voter_rep > __author_rep - __prev_rep_delta)) THEN
+
+  __author_rep := __author_rep - __prev_rep_delta;
+  __implicit_author_rep := __author_rep = 0;
+
+  __account_reputations[__author_idx] := ROW(__vote_data.author_id, __author_rep, __implicit_author_rep, true)::reputation_tracker_app.AccountReputation;
+      
+END IF;
+
+__implicit_voter_rep := __account_reputations[__voter_idx].is_implicit;
+--- reread voter's rep. since it can change above if author == voter
+__voter_rep := __account_reputations[__voter_idx].reputation;
+
+
+IF 
+__voter_rep >= 0 AND 
+(__rshares > 0 OR
+(__rshares < 0 AND NOT __implicit_voter_rep AND __voter_rep > __author_rep)) THEN
+
+  __rep_delta := (__rshares >> 6)::bigint;
+  __new_author_rep = __author_rep + __rep_delta;
+  __account_reputations[__author_idx] := ROW(__vote_data.author_id, __new_author_rep, False, true)::reputation_tracker_app.AccountReputation;
+
+END IF;
+
+*/
+
 
 
 RESET ROLE;
