@@ -1,0 +1,4 @@
+.tests/
+reptracker_app.log*
+install_app.log
+uninstall_app.log
