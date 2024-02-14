@@ -3,7 +3,7 @@
 SCRIPTPATH="$( cd -- "$(dirname "$0")" >/dev/null 2>&1 ; pwd -P )"
 SRCPATH="${SCRIPTPATH}/../"
 
-LOG_FILE=setup_db.log
+LOG_FILE=uninstall_app.log
 source "$SCRIPTPATH/common.sh"
 
 log_exec_params "$@"
@@ -26,7 +26,7 @@ print_help () {
 POSTGRES_HOST="/var/run/postgresql"
 POSTGRES_PORT=5432
 POSTGRES_URL=""
-DROP_ALL=0
+DROP_INDEXES=0
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -39,8 +39,8 @@ while [ $# -gt 0 ]; do
     --postgres-url=*)
         POSTGRES_URL="${1#*=}"
         ;;
-    --drop-all*)
-        DROP_ALL=1
+    --drop-indexes*)
+        DROP_INDEXES=1
         ;;
     --help)
         print_help
@@ -73,27 +73,25 @@ psql $POSTGRES_ACCESS -v ON_ERROR_STOP=on -f - <<EOF
 
 DO \$$
 BEGIN
-IF hive.app_context_exists('reputation_tracker_app') THEN
+IF hive.app_context_exists('reptracker_app') THEN
     RAISE NOTICE 'Attempting to REMOVE a HAF application context for reputation_tracker app...';
-    PERFORM hive.app_remove_context('reputation_tracker_app');
+    PERFORM hive.app_remove_context('reptracker_app');
 END IF;
 END
 \$$;
 
-DROP SCHEMA IF EXISTS reputation_tracker_app CASCADE;
-
+DROP OWNED BY reptracker_owner CASCADE;
 EOF
 
-if [ ${DROP_ALL} -eq 1 ]; then
-  echo "Attempting to drop roles & indexes built by application"
+psql -aw $POSTGRES_ACCESS -v ON_ERROR_STOP=on -c 'DROP OWNED BY reptracker_owner CASCADE;' || true
+psql -aw $POSTGRES_ACCESS -v ON_ERROR_STOP=on -c 'DROP ROLE IF EXISTS reptracker_owner, reputation_tracker_writer_group;'
 
-  psql -aw $POSTGRES_ACCESS -v ON_ERROR_STOP=on -c 'DROP OWNED BY reputation_tracker_app_owner CASCADE;' || true
-  psql -aw $POSTGRES_ACCESS -v ON_ERROR_STOP=on -c 'DROP ROLE IF EXISTS reputation_tracker_app_owner, reputation_tracker_writer_group;'
+if [ ${DROP_INDEXES} -eq 1 ]; then
+  echo "Attempting to drop indexes built by application"
 
   psql -aw $POSTGRES_ACCESS -v ON_ERROR_STOP=on -c 'DROP INDEX IF EXISTS hive.effective_comment_vote_idx;'
   psql -aw $POSTGRES_ACCESS -v ON_ERROR_STOP=on -c 'DROP INDEX IF EXISTS hive.delete_comment_op_idx;'
   psql -aw $POSTGRES_ACCESS -v ON_ERROR_STOP=on -c 'DROP INDEX IF EXISTS hive.stable_id_block_num_effective_vote_idx;'
 else
-  echo "Indexes & roles created by application have been preserved"
+  echo "Indexes created by application have been preserved"
 fi
-
