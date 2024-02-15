@@ -2,3 +2,4 @@
 reptracker_app.log*
 install_app.log
 uninstall_app.log
+account_dump_test.log

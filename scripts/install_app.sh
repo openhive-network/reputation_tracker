@@ -70,3 +70,6 @@ psql $POSTGRES_ACCESS -v ON_ERROR_STOP=on -f "${SRCPATH}/db/rep_indexes.sql"
 psql $POSTGRES_ACCESS -v ON_ERROR_STOP=on -f "${SRCPATH}/db/process_block_range.sql"
 psql $POSTGRES_ACCESS -v ON_ERROR_STOP=on -f "${SRCPATH}/db/rep_helpers.sql"
 psql $POSTGRES_ACCESS -v ON_ERROR_STOP=on -f "${SRCPATH}/db/main_loop.sql"
+
+psql $POSTGRES_ACCESS -v ON_ERROR_STOP=on -f "${SRCPATH}/account_dump/account_rep_stats.sql"
+psql $POSTGRES_ACCESS -v ON_ERROR_STOP=on -f "${SRCPATH}/account_dump/compare_accounts.sql"
