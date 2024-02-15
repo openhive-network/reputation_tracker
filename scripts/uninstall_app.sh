@@ -79,8 +79,6 @@ IF hive.app_context_exists('reptracker_app') THEN
 END IF;
 END
 \$$;
-
-DROP OWNED BY reptracker_owner CASCADE;
 EOF
 
 psql -aw $POSTGRES_ACCESS -v ON_ERROR_STOP=on -c 'DROP OWNED BY reptracker_owner CASCADE;' || true
