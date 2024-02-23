@@ -1,6 +1,6 @@
 DO $$
 BEGIN
-CREATE ROLE reptracker_owner WITH LOGIN INHERIT IN ROLE hive_applications_group;
+CREATE ROLE reptracker_owner WITH LOGIN INHERIT IN ROLE hive_applications_owner_group;
 EXCEPTION WHEN duplicate_object THEN RAISE NOTICE '%, skipping', SQLERRM USING ERRCODE = SQLSTATE;
 END
 $$;
@@ -14,6 +14,5 @@ END
 $$;
 
 --- Allow to create schemas
-GRANT CREATE ON DATABASE haf_block_log TO reptracker_owner;
 GRANT reputation_tracker_writer_group TO reptracker_owner;
 
