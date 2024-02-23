@@ -3,7 +3,6 @@
 1. [About](#about)
 1. [Setup](#setup)
 1. [Block processing](#block-processing)
-1. [Startup](#startup)
 1. [Tests](#tests)
 
 ## About
@@ -43,24 +42,14 @@ Before it can be used, reputation_tracker needs to process blocks available in H
 
 Again, you can use `./scripts/process_blocks.sh --help` to see available options.
 
-## Startup
+## Test
+
+Run account reputation verifying test by running the following commands:
 
 ```
-not yet supported
-```
+cd tests/
 
-## Dockerized setup
-
-```
-not yet supported
-```
-
-## Tests
-
-Run account reputation verifying test by running the following command:
-
-```
-./tests/account_dump_test.sh 
+./account_dump_test.sh 
 
 ```
 You can see all test options using command `./tests/account_dump_test.sh --help`
