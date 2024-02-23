@@ -34,26 +34,5 @@ END
 $$
 ;
 
-CREATE OR REPLACE FUNCTION reptracker_app.storeLastProcessedBlock(IN _lastBlock INT)
-RETURNS VOID
-LANGUAGE 'plpgsql'
-AS
-$$
-BEGIN
-  UPDATE reptracker_app.app_status SET last_processed_block = _lastBlock;
-END
-$$
-;
-
-CREATE OR REPLACE FUNCTION reptracker_app.lastProcessedBlock()
-RETURNS INT
-LANGUAGE 'plpgsql'
-AS
-$$
-BEGIN
-  RETURN last_processed_block FROM reptracker_app.app_status LIMIT 1;
-END
-$$
-;
 
 RESET ROLE;

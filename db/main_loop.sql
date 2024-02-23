@@ -10,7 +10,7 @@ DECLARE
 BEGIN
   RAISE NOTICE 'Entering massive processing of block range: <%, %>...', _from, _to;
   RAISE NOTICE 'Detaching HAF application context...';
-  PERFORM hive.app_context_detach(_appContext);
+  CALL hive.appproc_context_detach(_appContext);
 
   WITH select_account_reputations AS MATERIALIZED
   (
@@ -38,7 +38,7 @@ BEGIN
 
     PERFORM reptracker_app.process_block_range_data_a(b, _last_block);
 
-    PERFORM reptracker_app.storeLastProcessedBlock(_last_block);
+    PERFORM hive.app_set_current_block_num(_appContext, _last_block);
     COMMIT;
 
     RAISE NOTICE 'Block range: <%, %> processed successfully.
@@ -49,7 +49,7 @@ BEGIN
   END LOOP;
 
   RAISE NOTICE 'Attaching HAF application context at block: %.', _last_block;
-  PERFORM hive.app_context_attach(_appContext, _last_block);
+  CALL hive.appproc_context_attach(_appContext, _last_block);
 
  --- You should enable here all things previously disabled at begin of this function...
 
@@ -69,7 +69,6 @@ BEGIN
   RAISE NOTICE 'Processing block: %...', _block;
   __start_ts := clock_timestamp();
   PERFORM reptracker_app.process_block_range_data_a(_block, _block);
-  PERFORM reptracker_app.storeLastProcessedBlock(_block);
   COMMIT; -- For single block processing we want to commit all changes for each one.
   __end_ts := clock_timestamp();
 
@@ -93,6 +92,8 @@ DECLARE
   __next_block_range hive.blocks_range;
   __block_range_len INT := 0;
   __massive_processing_threshold INT := 100;
+  __original_commit_mode TEXT;
+  __commit_mode_changed BOOLEAN := false;
 BEGIN
   IF _maxBlockLimit != 0 THEN
     RAISE NOTICE 'Max block limit is specified as: %', _maxBlockLimit;
@@ -101,14 +102,15 @@ BEGIN
   PERFORM reptracker_app.allowProcessing();
   COMMIT;
 
-  SELECT reptracker_app.lastProcessedBlock() INTO __last_block;
+  SELECT current_setting('synchronous_commit') into __original_commit_mode;
 
+
+  SELECT hive.app_get_current_block_num(_appContext) INTO __last_block;
   RAISE NOTICE 'Last block processed by application: %', __last_block;
 
   IF NOT hive.app_context_is_attached(_appContext) THEN
-    PERFORM hive.app_context_attach(_appContext, __last_block);
+    CALL hive.appproc_context_attach(_appContext, __last_block);
   END IF;
-
   RAISE NOTICE 'Entering application main loop...';
 
   WHILE reptracker_app.continueProcessing() AND (_maxBlockLimit = 0 OR __last_block < _maxBlockLimit) LOOP
@@ -130,8 +132,16 @@ BEGIN
       __block_range_len := __next_block_range.last_block - __next_block_range.first_block + 1;
 
       IF __block_range_len >= __massive_processing_threshold THEN
+        IF NOT __commit_mode_changed AND __original_commit_mode != 'OFF' THEN
+          PERFORM set_config('synchronous_commit', 'OFF', false);
+          __commit_mode_changed := true;
+        END IF;
         CALL reptracker_app.do_massive_processing(_appContext, __next_block_range.first_block, __next_block_range.last_block, 10000, __last_block);
       ELSE
+        IF __commit_mode_changed THEN
+          PERFORM set_config('synchronous_commit', __original_commit_mode, false);
+          __commit_mode_changed := false;
+        END IF;
         FOR __block IN __next_block_range.first_block .. __next_block_range.last_block LOOP
           CALL reptracker_app.processBlock(__block);
           __last_block := __block;
