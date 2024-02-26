@@ -150,7 +150,7 @@ IF __debug_log THEN
   raise notice 'Block: % - Preprocessing a vote: author: %, voter: % permlink: %', _block_num, _author, _voter, _permlink;
 
   --- Author must have set explicit reputation to allow its correction
-  IF NOT __implicit_author_rep AND __prev_rshares != 0 THEN
+IF NOT __implicit_author_rep AND __prev_rshares != 0 THEN
     raise notice 'Author % reputation (pre-correction): %', _author, __author_rep;
     raise notice 'Author % - Correcting a vote: (voter: %) rshares: %', _author, _voter, __prev_rshares;
     raise notice 'Author % - Voter % reputation: %', _author, _voter, __voter_rep;
@@ -159,10 +159,10 @@ END IF;
 
 --- Author must have set explicit reputation to allow its correction
 --- Voter must have explicitly set reputation to match hived old conditions
-IF NOT __implicit_author_rep AND __voter_rep >= 0 AND (__prev_rshares > 0 OR (__prev_rshares < 0 AND NOT __implicit_voter_rep AND __voter_rep > __author_rep - __prev_rep_delta)) THEN
+IF NOT __implicit_author_rep AND __voter_rep >= 0 AND (__prev_rshares >= 0 OR (__prev_rshares < 0 AND NOT __implicit_voter_rep AND __voter_rep > __author_rep - __prev_rep_delta)) THEN
 
   __author_rep := __author_rep - __prev_rep_delta;
-  __implicit_author_rep := __author_rep = 0;
+__implicit_author_rep := __author_rep = 0;
 
   IF _voter_id = _author_id THEN 
     --- reread voter's rep. since it can change above if author == voter
@@ -172,7 +172,7 @@ IF NOT __implicit_author_rep AND __voter_rep >= 0 AND (__prev_rshares > 0 OR (__
 
   __account_reputations[1] := ROW(_author_id, __author_rep, __implicit_author_rep, true)::reptracker_app.AccountReputation;
 
-  IF __debug_log THEN 
+IF __debug_log THEN 
     IF __implicit_author_rep THEN
       raise notice 'Author % reputation (past-correction): implicit-0', _author;
     ELSE
@@ -187,12 +187,12 @@ IF __debug_log THEN
   raise notice 'Author % - Voter % reputation: %', _author, _voter, __voter_rep;
 END IF;
 
-IF __voter_rep >= 0 AND (__rshares > 0 OR (__rshares < 0 AND NOT __implicit_voter_rep AND __voter_rep > __author_rep)) THEN
+IF __voter_rep >= 0 AND (__rshares >= 0 OR (__rshares < 0 AND NOT __implicit_voter_rep AND __voter_rep > __author_rep)) THEN
 
   __new_author_rep = __author_rep + (__rshares >> 6)::BIGINT;
   __account_reputations[1] := ROW(_author_id, __new_author_rep, false, true)::reptracker_app.AccountReputation;
 
-  IF __debug_log THEN 
+IF __debug_log THEN 
     IF __implicit_author_rep THEN
       raise notice 'Setting a reputation of author: % to %', _author, __new_author_rep;
     ELSE
