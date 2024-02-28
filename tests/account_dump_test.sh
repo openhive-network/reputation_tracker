@@ -13,7 +13,8 @@ POSTGRES_USER="reptracker_owner"
 print_help () {
     echo "Usage: $0 [OPTION[=VALUE]]..."
     echo
-    echo "Allows to setup a database already filled by HAF instance, to work with haf_be application."
+    echo "Allows to start a reputation tracker test (5m blocks)."
+    echo "reputation tracker must be stopped on 5m blocks (add flag to ./process_blocks.sh --stop-at-block=5000000)"
     echo "OPTIONS:"
     echo "  --host=VALUE             Allows to specify a PostgreSQL host location (defaults to localhost)"
     echo "  --port=NUMBER            Allows to specify a PostgreSQL operating port (defaults to 5432)"
@@ -63,7 +64,6 @@ if [[ -z "${CI:-}" ]]; then
     pip install psycopg2-binary
 fi
 
-# rm -f "${SCRIPTDIR}/accounts_dump.json"
 # The line below is somewhat problematic. Gunzip by default deletes gz file after decompression,
 # but the '-k' parameter, which prevents that from happening is not supported on some of its versions.
 # 
@@ -72,7 +72,7 @@ fi
 # gzcat "${SCRIPTDIR}/accounts_dump.json.gz" > "${SCRIPTDIR}/accounts_dump.json"
 # zcat "${SCRIPTDIR}/accounts_dump.json.gz" > "${SCRIPTDIR}/accounts_dump.json"
 
-#gunzip -k "${SCRIPTDIR}/accounts_dump.json.gz"
+gunzip -k "${SCRIPTDIR}/accounts_dump.json.gz"
 
 # curl -s --data '{"jsonrpc":"2.0", "method":"reputation_api.get_account_reputations", "params": {"account_lower_bound": "", "limit": 10000000}, "id":1}' http://172.17.0.2:8091 > accounts_dump.json 
 
@@ -95,9 +95,11 @@ DIFFERING_ACCOUNTS=$(psql "$POSTGRES_ACCESS_ADMIN" -v "ON_ERROR_STOP=on" -t -A  
 
 if [ -z "$DIFFERING_ACCOUNTS" ]; then
     echo "Account balances are correct!"
+    rm -f "${SCRIPTDIR}/accounts_dump.json"
     exit 0
 else
     echo "Account balances are incorrect..."
     psql "$POSTGRES_ACCESS_ADMIN" -v "ON_ERROR_STOP=on" -c "SELECT * FROM reptracker_backend.differing_accounts;"
+    rm -f "${SCRIPTDIR}/accounts_dump.json"
     exit 3
 fi
