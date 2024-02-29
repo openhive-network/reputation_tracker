@@ -142,22 +142,16 @@ BEGIN
           PERFORM set_config('synchronous_commit', __original_commit_mode, false);
           __commit_mode_changed := false;
         END IF;
-        FOR __block IN __next_block_range.first_block .. __next_block_range.last_block LOOP
-          CALL reptracker_app.processBlock(__block);
-          __last_block := __block;
-
-          EXIT WHEN reptracker_app.continueProcessing() OR (_maxBlockLimit != 0 AND __last_block >= _maxBlockLimit);
-        END LOOP;
+          CALL reptracker_app.processBlock(__next_block_range.first_block);
+          __last_block := __next_block_range.first_block;
       END IF;
 
     END IF;
 
+  COMMIT;
   END LOOP;
 
   RAISE NOTICE 'Exiting application main loop at processed block: %.', __last_block;
-  PERFORM reptracker_app.storeLastProcessedBlock(__last_block);
-
-  COMMIT;
 END
 $$
 ;
