@@ -49,7 +49,7 @@ BEGIN
   END LOOP;
 
   RAISE NOTICE 'Attaching HAF application context at block: %.', _last_block;
-  CALL hive.appproc_context_attach(_appContext, _last_block);
+  CALL hive.appproc_context_attach(_appContext);
 
  --- You should enable here all things previously disabled at begin of this function...
 
@@ -108,8 +108,9 @@ BEGIN
   SELECT hive.app_get_current_block_num(_appContext) INTO __last_block;
   RAISE NOTICE 'Last block processed by application: %', __last_block;
 
+
   IF NOT hive.app_context_is_attached(_appContext) THEN
-    CALL hive.appproc_context_attach(_appContext, __last_block);
+    CALL hive.appproc_context_attach(_appContext);
   END IF;
   RAISE NOTICE 'Entering application main loop...';
 
