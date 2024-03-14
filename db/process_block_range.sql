@@ -110,7 +110,6 @@ CREATE OR REPLACE FUNCTION reptracker_app.calculate_account_reputations(
     SET jit = OFF
 AS $BODY$
 DECLARE
-  __account_reputations reptracker_app.AccountReputation[];
   __author_rep bigint;
   __voter_rep bigint;
   __implicit_voter_rep boolean;
@@ -118,101 +117,71 @@ DECLARE
   __prev_rep_delta bigint := (_prev_rshares >> 6)::BIGINT;
   __prev_rshares BIGINT := _prev_rshares;
   __rshares BIGINT := _rshares;
+  __rshares_delta BIGINT := (_rshares >> 6)::BIGINT;
   __new_author_rep BIGINT;
   __debug_log boolean := false;
 BEGIN
 
-SELECT INTO __account_reputations
-ARRAY(
+WITH find_voter AS MATERIALIZED 
+(
   SELECT 
-    ROW(default_values.account_id, COALESCE(ad.reputation, 0), COALESCE(ad.is_implicit, true), false)::reptracker_app.AccountReputation 
+    ar.account_id,
+    ar.reputation,
+    ar.is_implicit
+  FROM reptracker_app.account_reputations ar
+  WHERE 
+    ar.account_id = _voter_id
+),
+reset_vote AS MATERIALIZED
+(
+  UPDATE reptracker_app.account_reputations ar
+  SET 
+    reputation = ar.reputation - __prev_rep_delta,
+    is_implicit = (ar.reputation - __prev_rep_delta) = 0
+  FROM find_voter fv 
+  WHERE 
+    ar.account_id = _author_id AND
+    (NOT ar.is_implicit AND fv.reputation >= 0 AND 
+    (__prev_rshares >= 0 OR (__prev_rshares < 0 AND NOT fv.is_implicit AND fv.reputation > ar.reputation - __prev_rep_delta)))
+  RETURNING
+    ar.account_id,
+    ar.reputation,
+    ar.is_implicit
+),
+if_author_voter_same AS MATERIALIZED
+(
+  SELECT 
+    fv.account_id,
+    COALESCE(rv.reputation, fv.reputation) as reputation,
+    COALESCE(rv.is_implicit, fv.is_implicit) as is_implicit
   FROM 
     (
-      SELECT ar.account_id, ar.reputation, ar.is_implicit  
-      FROM reptracker_app.account_reputations ar
-      WHERE ar.account_id = _author_id OR ar.account_id = _voter_id
-    ) AS ad
+      SELECT 
+        rv.account_id,
+        rv.reputation,
+        rv.is_implicit
+      FROM reset_vote rv
+      WHERE rv.account_id = _voter_id
+    ) as rv
   RIGHT JOIN 
     (
-      SELECT _author_id AS account_id
-      UNION ALL 
-      SELECT _voter_id AS account_id
-    ) AS default_values
-  ON 
-    ad.account_id = default_values.account_id);
-
-__author_rep := __account_reputations[1].reputation;
-__voter_rep := __account_reputations[2].reputation;
-__implicit_author_rep := __account_reputations[1].is_implicit;
-__implicit_voter_rep := __account_reputations[2].is_implicit;
-
-IF __debug_log THEN
-  raise notice 'Block: % - Preprocessing a vote: author: %, voter: % permlink: %', _block_num, _author, _voter, _permlink;
-
-  --- Author must have set explicit reputation to allow its correction
-IF NOT __implicit_author_rep AND __prev_rshares != 0 THEN
-    raise notice 'Author % reputation (pre-correction): %', _author, __author_rep;
-    raise notice 'Author % - Correcting a vote: (voter: %) rshares: %', _author, _voter, __prev_rshares;
-    raise notice 'Author % - Voter % reputation: %', _author, _voter, __voter_rep;
-  END IF;
-END IF;
-
---- Author must have set explicit reputation to allow its correction
---- Voter must have explicitly set reputation to match hived old conditions
-IF NOT __implicit_author_rep AND __voter_rep >= 0 AND (__prev_rshares >= 0 OR (__prev_rshares < 0 AND NOT __implicit_voter_rep AND __voter_rep > __author_rep - __prev_rep_delta)) THEN
-
-  __author_rep := __author_rep - __prev_rep_delta;
-__implicit_author_rep := __author_rep = 0;
-
-  IF _voter_id = _author_id THEN 
-    --- reread voter's rep. since it can change above if author == voter
-    __implicit_voter_rep := __implicit_author_rep;
-    __voter_rep := __author_rep;
-  END IF;
-
-  __account_reputations[1] := ROW(_author_id, __author_rep, __implicit_author_rep, true)::reptracker_app.AccountReputation;
-
-IF __debug_log THEN 
-    IF __implicit_author_rep THEN
-      raise notice 'Author % reputation (past-correction): implicit-0', _author;
-    ELSE
-      raise notice 'Author % reputation (past-correction): %', _author, __author_rep;
-    END IF;
-  END IF;
-
-END IF;
-
-IF __debug_log THEN 
-  raise notice 'Block: % - Author % - Processing a vote: (voter: %) rshares: %', _block_num, _author, _voter, __rshares;
-  raise notice 'Author % - Voter % reputation: %', _author, _voter, __voter_rep;
-END IF;
-
-IF __voter_rep >= 0 AND (__rshares >= 0 OR (__rshares < 0 AND NOT __implicit_voter_rep AND __voter_rep > __author_rep)) THEN
-
-  __new_author_rep = __author_rep + (__rshares >> 6)::BIGINT;
-  __account_reputations[1] := ROW(_author_id, __new_author_rep, false, true)::reptracker_app.AccountReputation;
-
-IF __debug_log THEN 
-    IF __implicit_author_rep THEN
-      raise notice 'Setting a reputation of author: % to %', _author, __new_author_rep;
-    ELSE
-      raise notice 'Changing reputation of author: % from % to %', _author, __author_rep, __new_author_rep;
-    END IF;
-  END IF;
-
-END IF;
-
-INSERT INTO reptracker_app.account_reputations
-  (account_id, reputation, is_implicit)
-SELECT ds.id, ds.reputation, ds.is_implicit
-FROM unnest(__account_reputations) ds
-WHERE ds.reputation IS NOT NULL AND ds.changed
-ON CONFLICT (account_id) DO UPDATE
+      SELECT 
+        fv.account_id,
+        fv.reputation,
+        fv.is_implicit
+      FROM find_voter fv
+    ) as fv
+  ON rv.account_id = fv.account_id
+) 
+UPDATE reptracker_app.account_reputations ar
 SET 
-    reputation = EXCLUDED.reputation,
-    is_implicit = EXCLUDED.is_implicit
-;
-  
+  reputation = ar.reputation + __rshares_delta,
+  is_implicit = false
+FROM if_author_voter_same avs 
+WHERE 
+  ar.account_id = _author_id AND
+  (avs.reputation >= 0 AND (__rshares >= 0 OR (__rshares < 0 AND NOT avs.is_implicit AND avs.reputation > ar.reputation)));
+
 END
 $BODY$
 ;
