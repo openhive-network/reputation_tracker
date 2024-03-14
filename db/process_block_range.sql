@@ -131,9 +131,7 @@ WITH find_voter AS MATERIALIZED
   FROM reptracker_app.account_reputations ar
   WHERE 
     ar.account_id = _voter_id
-),
-reset_vote AS MATERIALIZED
-(
+)
   UPDATE reptracker_app.account_reputations ar
   SET 
     reputation = ar.reputation - __prev_rep_delta,
@@ -142,42 +140,23 @@ reset_vote AS MATERIALIZED
   WHERE 
     ar.account_id = _author_id AND
     (NOT ar.is_implicit AND fv.reputation >= 0 AND 
-    (__prev_rshares >= 0 OR (__prev_rshares < 0 AND NOT fv.is_implicit AND fv.reputation > ar.reputation - __prev_rep_delta)))
-  RETURNING
+    (__prev_rshares >= 0 OR (__prev_rshares < 0 AND NOT fv.is_implicit AND fv.reputation > ar.reputation - __prev_rep_delta)));
+
+WITH if_voter_changed AS MATERIALIZED
+(
+  SELECT 
     ar.account_id,
     ar.reputation,
     ar.is_implicit
-),
-if_author_voter_same AS MATERIALIZED
-(
-  SELECT 
-    fv.account_id,
-    COALESCE(rv.reputation, fv.reputation) as reputation,
-    COALESCE(rv.is_implicit, fv.is_implicit) as is_implicit
-  FROM 
-    (
-      SELECT 
-        rv.account_id,
-        rv.reputation,
-        rv.is_implicit
-      FROM reset_vote rv
-      WHERE rv.account_id = _voter_id
-    ) as rv
-  RIGHT JOIN 
-    (
-      SELECT 
-        fv.account_id,
-        fv.reputation,
-        fv.is_implicit
-      FROM find_voter fv
-    ) as fv
-  ON rv.account_id = fv.account_id
+  FROM reptracker_app.account_reputations ar
+  WHERE 
+    ar.account_id = _voter_id
 ) 
 UPDATE reptracker_app.account_reputations ar
 SET 
   reputation = ar.reputation + __rshares_delta,
   is_implicit = false
-FROM if_author_voter_same avs 
+FROM if_voter_changed avs 
 WHERE 
   ar.account_id = _author_id AND
   (avs.reputation >= 0 AND (__rshares >= 0 OR (__rshares < 0 AND NOT avs.is_implicit AND avs.reputation > ar.reputation)));
