@@ -7,6 +7,7 @@ AS
 $$
 DECLARE
   _final_block integer;
+  __account_reputations reptracker_app.AccountReputation[];
 BEGIN
   RAISE NOTICE 'Entering massive processing of block range: <%, %>...', _from, _to;
   RAISE NOTICE 'Detaching HAF application context...';
@@ -25,6 +26,13 @@ BEGIN
   WHERE sar.ar_id IS NULL
   ;
 
+  SELECT INTO __account_reputations
+  ARRAY(
+    SELECT 
+      ROW(ad.account_id, ad.reputation, ad.is_implicit, false)::reptracker_app.AccountReputation 
+    FROM reptracker_app.account_reputations ad
+  );
+
   --- You can do here also other things to speedup your app, i.e. disable constrains, remove indexes etc.
 
   FOR b IN _from .. _to BY _step LOOP
@@ -36,7 +44,7 @@ BEGIN
 
     RAISE NOTICE 'Attempting to process a block range: <%, %>', b, _last_block;
 
-    PERFORM reptracker_app.process_block_range_data_a(b, _last_block);
+    PERFORM reptracker_app.process_block_range_data_b(b, _last_block, __account_reputations);
 
     PERFORM hive.app_set_current_block_num(_appContext, _last_block);
     COMMIT;
