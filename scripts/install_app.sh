@@ -25,6 +25,8 @@ print_help () {
 POSTGRES_HOST="/var/run/postgresql"
 POSTGRES_PORT=5432
 POSTGRES_URL=""
+reptracker_dir="$SCRIPTPATH/.."
+
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -63,6 +65,10 @@ else
   POSTGRES_ACCESS=$POSTGRES_URL
 fi
 
+pushd "$reptracker_dir"
+./scripts/generate_version_sql.sh "$reptracker_dir"
+popd
+
 psql $POSTGRES_ACCESS -v ON_ERROR_STOP=on -f "${SRCPATH}/db/builtin_roles.sql"
 psql $POSTGRES_ACCESS -v ON_ERROR_STOP=on -f "${SRCPATH}/db/database_schema.sql"
 psql $POSTGRES_ACCESS -v ON_ERROR_STOP=on -f "${SRCPATH}/db/rep_views.sql"
@@ -73,3 +79,4 @@ psql $POSTGRES_ACCESS -v ON_ERROR_STOP=on -f "${SRCPATH}/db/main_loop.sql"
 
 psql $POSTGRES_ACCESS -v ON_ERROR_STOP=on -f "${SRCPATH}/account_dump/account_rep_stats.sql"
 psql $POSTGRES_ACCESS -v ON_ERROR_STOP=on -f "${SRCPATH}/account_dump/compare_accounts.sql"
+psql $POSTGRES_ACCESS -v ON_ERROR_STOP=on -f "${SRCPATH}/scripts/set_version_in_sql.pgsql"

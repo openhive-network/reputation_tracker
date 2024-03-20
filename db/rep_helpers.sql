@@ -34,5 +34,34 @@ END
 $$
 ;
 
+CREATE OR REPLACE FUNCTION reptracker_app.get_version()
+RETURNS TEXT
+LANGUAGE 'plpgsql' STABLE
+AS
+$$
+BEGIN
+  RETURN runtime_hash FROM reptracker_app.version LIMIT 1;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION reptracker_app.set_version(_git_hash TEXT)
+RETURNS VOID
+LANGUAGE 'plpgsql' VOLATILE
+AS
+$$
+DECLARE
+  _schema_hash TEXT := (SELECT schema_hash FROM reptracker_app.version LIMIT 1);
+BEGIN
+TRUNCATE TABLE reptracker_app.version;
+
+IF _schema_hash IS NULL THEN
+  INSERT INTO reptracker_app.version(schema_hash, runtime_hash) VALUES (_git_hash, _git_hash);
+ELSE
+  INSERT INTO reptracker_app.version(schema_hash, runtime_hash) VALUES (_schema_hash, _git_hash);
+END IF;
+
+END
+$$;
+
 
 RESET ROLE;

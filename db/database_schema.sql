@@ -37,6 +37,11 @@ CREATE TABLE IF NOT EXISTS reptracker_app.account_reputations
 INHERITS (hive.reptracker_app)
 ;
 
+CREATE TABLE IF NOT EXISTS reptracker_app.version(
+  schema_hash TEXT,
+  runtime_hash TEXT
+);
+
 DROP TYPE IF EXISTS reptracker_app.AccountReputation CASCADE;
 
 CREATE TYPE reptracker_app.AccountReputation AS (id INT, reputation BIGINT, is_implicit BOOLEAN, changed BOOLEAN);
