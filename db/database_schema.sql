@@ -9,7 +9,10 @@ RAISE NOTICE 'Attempting to create an application schema tables...';
 
 IF NOT hive.app_context_exists('reptracker_app') THEN
     RAISE NOTICE 'Attempting to create a HAF application context...';
-    PERFORM hive.app_create_context('reptracker_app');
+    PERFORM hive.app_create_context('reptracker_app',
+    TRUE, -- _if_forking
+    FALSE -- _is_attached
+    );
 END IF;
 
 CREATE TABLE IF NOT EXISTS reptracker_app.app_status
