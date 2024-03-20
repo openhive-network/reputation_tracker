@@ -10,7 +10,7 @@ DECLARE
 BEGIN
   RAISE NOTICE 'Entering massive processing of block range: <%, %>...', _from, _to;
   RAISE NOTICE 'Detaching HAF application context...';
-  CALL hive.appproc_context_detach(_appContext);
+  PERFORM hive.app_context_detach(_appContext);
 
   WITH select_account_reputations AS MATERIALIZED
   (
@@ -49,7 +49,7 @@ BEGIN
   END LOOP;
 
   RAISE NOTICE 'Attaching HAF application context at block: %.', _last_block;
-  CALL hive.appproc_context_attach(_appContext);
+  PERFORM hive.app_context_attach(_appContext);
 
  --- You should enable here all things previously disabled at begin of this function...
 

@@ -39,7 +39,7 @@ INHERITS (hive.reptracker_app)
 
 DROP TYPE IF EXISTS reptracker_app.AccountReputation CASCADE;
 
-CREATE TYPE reptracker_app.AccountReputation AS (id INT, reputation BIGINT, is_implicit BOOLEAN, changed BOOLEAN);
+CREATE TYPE reptracker_app.AccountReputation AS (id INT, reputation BIGINT, is_implicit BOOLEAN);
 
 EXCEPTION WHEN duplicate_schema THEN RAISE NOTICE '%, skipping', SQLERRM USING ERRCODE = SQLSTATE;
 END

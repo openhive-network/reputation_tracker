@@ -110,6 +110,8 @@ CREATE OR REPLACE FUNCTION reptracker_app.calculate_account_reputations(
     SET jit = OFF
 AS $BODY$
 DECLARE
+  _voter_reputation reptracker_app.AccountReputation;
+  _author_reputation reptracker_app.AccountReputation;
   __author_rep bigint;
   __voter_rep bigint;
   __implicit_voter_rep boolean;
@@ -122,44 +124,47 @@ DECLARE
   __debug_log boolean := false;
 BEGIN
 
-WITH find_voter AS MATERIALIZED 
-(
   SELECT 
     ar.account_id,
     ar.reputation,
     ar.is_implicit
+  INTO _voter_reputation
   FROM reptracker_app.account_reputations ar
   WHERE 
-    ar.account_id = _voter_id
-)
+    ar.account_id = _voter_id;
+
+  _author_reputation := _voter_reputation;
+
   UPDATE reptracker_app.account_reputations ar
   SET 
     reputation = ar.reputation - __prev_rep_delta,
     is_implicit = (ar.reputation - __prev_rep_delta) = 0
-  FROM find_voter fv 
   WHERE 
     ar.account_id = _author_id AND
-    (NOT ar.is_implicit AND fv.reputation >= 0 AND 
-    (__prev_rshares >= 0 OR (__prev_rshares < 0 AND NOT fv.is_implicit AND fv.reputation > ar.reputation - __prev_rep_delta)));
-
-WITH if_voter_changed AS MATERIALIZED
-(
-  SELECT 
+    (NOT ar.is_implicit AND _voter_reputation.reputation >= 0 AND 
+    (__prev_rshares >= 0 OR (__prev_rshares < 0 AND NOT _voter_reputation.is_implicit AND _voter_reputation.reputation > ar.reputation - __prev_rep_delta)))
+  RETURNING
     ar.account_id,
-    ar.reputation,
-    ar.is_implicit
-  FROM reptracker_app.account_reputations ar
+    (ar.reputation - __prev_rep_delta),
+    (ar.reputation - __prev_rep_delta) = 0 INTO _author_reputation;
+
+  RAISE NOTICE 'voter %', _voter_reputation;
+  RAISE NOTICE 'author %' , _author_reputation;
+
+
+  UPDATE reptracker_app.account_reputations ar
+  SET 
+    reputation = ar.reputation + __rshares_delta,
+    is_implicit = false
   WHERE 
-    ar.account_id = _voter_id
-) 
-UPDATE reptracker_app.account_reputations ar
-SET 
-  reputation = ar.reputation + __rshares_delta,
-  is_implicit = false
-FROM if_voter_changed avs 
-WHERE 
-  ar.account_id = _author_id AND
-  (avs.reputation >= 0 AND (__rshares >= 0 OR (__rshares < 0 AND NOT avs.is_implicit AND avs.reputation > ar.reputation)));
+    ar.account_id = _author_id AND
+    (CASE WHEN _author_id = _voter_id THEN
+    (_author_reputation.reputation >= 0 AND 
+    (__rshares >= 0 OR (__rshares < 0 AND NOT _author_reputation.is_implicit AND _author_reputation.reputation > ar.reputation)))
+    ELSE
+    (_voter_reputation.reputation >= 0 AND 
+    (__rshares >= 0 OR (__rshares < 0 AND NOT _voter_reputation.is_implicit AND _voter_reputation.reputation > ar.reputation))) 
+    END);
 
 END
 $BODY$
