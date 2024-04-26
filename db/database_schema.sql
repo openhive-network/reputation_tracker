@@ -44,6 +44,8 @@ CREATE TABLE IF NOT EXISTS reptracker_app.version(
 
 DROP TYPE IF EXISTS reptracker_app.AccountReputation CASCADE;
 
+CREATE TYPE reptracker_app.id_prev_shares AS (id BIGINT, prev_rshares BIGINT);
+
 CREATE TYPE reptracker_app.AccountReputation AS (id INT, reputation BIGINT, is_implicit BOOLEAN, changed BOOLEAN);
 
 EXCEPTION WHEN duplicate_schema THEN RAISE NOTICE '%, skipping', SQLERRM USING ERRCODE = SQLSTATE;

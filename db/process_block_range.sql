@@ -1,5 +1,8 @@
 SET ROLE reptracker_owner;
 
+--4.09 
+
+
 
 --- Massive version of account reputation calculation.
 DROP FUNCTION IF EXISTS reptracker_app.process_block_range_data_a;
@@ -52,19 +55,58 @@ SELECT
   up.permlink, 
   up.voter, 
   up.rshares AS up_rshares,  
-  COALESCE((
-    SELECT prd.rshares
+  (
+    SELECT array_agg((prd.id, prd.rshares)::reptracker_app.id_prev_shares)
     FROM reptracker_app.hive_reputation_data_view prd
     WHERE 
       prd.author = up.author AND 
       prd.voter = up.voter AND 
       prd.permlink = up.permlink AND 
-      prd.id < up.id AND 
-      NOT EXISTS (SELECT NULL FROM reptracker_app.deleted_comment_operation_view dp
-    WHERE dp.author = up.author and dp.permlink = up.permlink and dp.id between prd.id and up.id)
-    ORDER BY prd.id DESC LIMIT 1
-  ), 0) AS prev_rshares
+      prd.id < up.id
+  ) AS prev_ids
 FROM selected_range up
+),
+unnest_prd_ids AS MATERIALIZED
+(
+  SELECT
+    upi.up_id,
+    upi.block_num,
+    upi.author, 
+    upi.permlink, 
+    upi.voter, 
+    upi.up_rshares,
+    (upi.prd_id).id as prd_id,
+    (upi.prd_id).prev_rshares AS prev_rshares,
+    COALESCE((
+      SELECT 1 
+      FROM reptracker_app.deleted_comment_operation_view dp
+      WHERE dp.author = upi.author and dp.permlink = upi.permlink and dp.id between (upi.prd_id).id and upi.up_id LIMIT 1
+    ),0) as filter_deleted
+  FROM (
+  SELECT 
+    fr.up_id,
+    fr.block_num,
+    fr.author, 
+    fr.permlink, 
+    fr.voter, 
+    fr.up_rshares,
+    unnest(fr.prev_ids) as prd_id
+  FROM filtered_range fr
+  ORDER by prd_id DESC) as upi
+),
+deleted_comments_join AS MATERIALIZED
+(
+  SELECT 
+    dc.up_id,
+    dc.block_num,
+    dc.author, 
+    dc.permlink, 
+    dc.voter, 
+    dc.up_rshares,
+    dc.prev_rshares
+  FROM unnest_prd_ids dc
+  WHERE dc.filter_deleted = 0
+  ORDER BY dc.prd_id
 ),
 balance_change AS MATERIALIZED 
 (
@@ -78,7 +120,7 @@ balance_change AS MATERIALIZED
       hv.id,
       ja.up_rshares, 
       ja.prev_rshares)
-  FROM filtered_range ja
+  FROM deleted_comments_join ja
   JOIN hive.accounts_view ha on ha.name = ja.author
   JOIN hive.accounts_view hv on hv.name = ja.voter
   ORDER BY ja.up_id
