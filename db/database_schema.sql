@@ -1,58 +1,70 @@
+-- noqa: disable=CP03
+
 SET ROLE reptracker_owner;
 
 DO $$
+  DECLARE __schema_name VARCHAR;
 BEGIN
+  SHOW SEARCH_PATH INTO __schema_name;
 
-CREATE SCHEMA reptracker_app AUTHORIZATION reptracker_owner;
+  RAISE NOTICE 'reputation_tracker will be installed in schema % with context %', __schema_name, __schema_name;
 
-RAISE NOTICE 'Attempting to create an application schema tables...';
+  IF hive.app_context_exists(__schema_name) THEN
+      RAISE NOTICE 'Context % already exists, it means all tables are already created and data installing is skipped', __schema_name;
+      RETURN;
+  END IF;
 
-IF NOT hive.app_context_exists('reptracker_app') THEN
-    RAISE NOTICE 'Attempting to create a HAF application context...';
-    PERFORM hive.app_create_context('reptracker_app',
-    TRUE, -- _if_forking
-    FALSE -- _is_attached
-    );
-END IF;
+  PERFORM hive.app_create_context(
+    _name =>__schema_name,
+    _schema => __schema_name,
+    _is_forking => TRUE,
+    _is_attached => FALSE
+  );
 
-CREATE TABLE IF NOT EXISTS reptracker_app.app_status
+CREATE TABLE IF NOT EXISTS app_status
 (
   continue_processing BOOLEAN NOT NULL,
   last_processed_block INT NOT NULL
 );
 
-INSERT INTO reptracker_app.app_status
+INSERT INTO app_status
 (continue_processing, last_processed_block)
 VALUES
 (True, 0)
 ;
 
-CREATE TABLE IF NOT EXISTS reptracker_app.account_reputations
+CREATE TABLE IF NOT EXISTS version(
+  schema_hash TEXT,
+  runtime_hash TEXT
+);
+
+CREATE TABLE IF NOT EXISTS account_reputations
 (
     account_id INT NOT NULL,
     reputation BIGINT NOT NULL,
     is_implicit boolean,
     CONSTRAINT PK_account_reputations PRIMARY KEY (account_id)
 )
-INHERITS (hive.reptracker_app)
 ;
 
-CREATE TABLE IF NOT EXISTS reptracker_app.version(
-  schema_hash TEXT,
-  runtime_hash TEXT
-);
+PERFORM hive.app_register_table( __schema_name, 'account_reputations', __schema_name );
 
-DROP TYPE IF EXISTS reptracker_app.AccountReputation CASCADE;
+DROP TYPE IF EXISTS AccountReputation CASCADE;
+CREATE TYPE AccountReputation AS 
+(
+  id INT,
+  reputation BIGINT,
+  is_implicit BOOLEAN, 
+  changed BOOLEAN
+)
+;
 
-CREATE TYPE reptracker_app.AccountReputation AS (id INT, reputation BIGINT, is_implicit BOOLEAN, changed BOOLEAN);
-
-EXCEPTION WHEN duplicate_schema THEN RAISE NOTICE '%, skipping', SQLERRM USING ERRCODE = SQLSTATE;
 END
 $$;
 
 GRANT USAGE ON SCHEMA reptracker_app TO reputation_tracker_writer_group;
 --- Only data writers can write to such table(s)
-GRANT ALL ON reptracker_app.app_status TO reputation_tracker_writer_group;
-GRANT ALL ON reptracker_app.account_reputations TO reputation_tracker_writer_group;
+GRANT ALL ON app_status TO reputation_tracker_writer_group;
+GRANT ALL ON account_reputations TO reputation_tracker_writer_group;
 
 RESET ROLE;
