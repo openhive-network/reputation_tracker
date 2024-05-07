@@ -1,7 +1,7 @@
 SET ROLE reptracker_owner;
 
 
-CREATE OR REPLACE PROCEDURE reptracker_app.do_massive_processing(IN _appContext VARCHAR, in _from INT, in _to INT, IN _step INT, INOUT _last_block integer)
+CREATE OR REPLACE PROCEDURE do_massive_processing(IN _appContext VARCHAR, in _from INT, in _to INT, IN _step INT, INOUT _last_block integer)
 LANGUAGE 'plpgsql'
 AS
 $$
@@ -16,9 +16,9 @@ BEGIN
   (
   SELECT ha.id AS ha_id, 0, true, ar.account_id as ar_id
   FROM hive.accounts_view ha
-  LEFT JOIN reptracker_app.account_reputations ar ON ar.account_id = ha.id
+  LEFT JOIN account_reputations ar ON ar.account_id = ha.id
   )
-  INSERT INTO reptracker_app.account_reputations
+  INSERT INTO account_reputations
     (account_id, reputation, is_implicit)
   SELECT sar.ha_id, 0, true
   FROM select_account_reputations sar
@@ -36,7 +36,7 @@ BEGIN
 
     RAISE NOTICE 'Attempting to process a block range: <%, %>', b, _last_block;
 
-    PERFORM reptracker_app.process_block_range_data_a(b, _last_block);
+    PERFORM reptracker_block_range_data(b, _last_block);
 
     PERFORM hive.app_set_current_block_num(_appContext, _last_block);
     COMMIT;
@@ -44,7 +44,7 @@ BEGIN
     RAISE NOTICE 'Block range: <%, %> processed successfully.
     ', b, _last_block;
 
-    EXIT WHEN NOT reptracker_app.continueProcessing();
+    EXIT WHEN NOT continueProcessing();
 
   END LOOP;
 
@@ -58,7 +58,7 @@ END
 $$
 ;
 
-CREATE OR REPLACE PROCEDURE reptracker_app.processBlock(in _block INT)
+CREATE OR REPLACE PROCEDURE processBlock(in _block INT)
 LANGUAGE 'plpgsql'
 AS
 $$
@@ -68,7 +68,7 @@ DECLARE
 BEGIN
   RAISE NOTICE 'Processing block: %...', _block;
   __start_ts := clock_timestamp();
-  PERFORM reptracker_app.process_block_range_data_a(_block, _block);
+  PERFORM reptracker_block_range_data(_block, _block);
   COMMIT; -- For single block processing we want to commit all changes for each one.
   __end_ts := clock_timestamp();
 
@@ -81,9 +81,9 @@ $$
 /** Application entry point, which:
   - defines its data schema,
   - creates HAF application context,
-  - starts application main-loop (which iterates infinitely). To stop it call `reptracker_app.stopProcessing();` from another session and commit its trasaction.
+  - starts application main-loop (which iterates infinitely). To stop it call `stopProcessing();` from another session and commit its trasaction.
 */
-CREATE OR REPLACE PROCEDURE reptracker_app.main(IN _appContext VARCHAR = 'reptracker_app', IN _maxBlockLimit INT = 0)
+CREATE OR REPLACE PROCEDURE main(IN _appContext VARCHAR = 'reptracker_app', IN _maxBlockLimit INT = 0)
 LANGUAGE 'plpgsql'
 AS
 $$
@@ -99,7 +99,7 @@ BEGIN
     RAISE NOTICE 'Max block limit is specified as: %', _maxBlockLimit;
   END IF;
 
-  PERFORM reptracker_app.allowProcessing();
+  PERFORM allowProcessing();
   COMMIT;
 
   SELECT current_setting('synchronous_commit') into __original_commit_mode;
@@ -114,7 +114,7 @@ BEGIN
   END IF;
   RAISE NOTICE 'Entering application main loop...';
 
-  WHILE reptracker_app.continueProcessing() AND (_maxBlockLimit = 0 OR __last_block < _maxBlockLimit) LOOP
+  WHILE continueProcessing() AND (_maxBlockLimit = 0 OR __last_block < _maxBlockLimit) LOOP
     __next_block_range := hive.app_next_block(_appContext);
 
     IF __next_block_range IS NULL THEN
@@ -137,13 +137,13 @@ BEGIN
           PERFORM set_config('synchronous_commit', 'OFF', false);
           __commit_mode_changed := true;
         END IF;
-        CALL reptracker_app.do_massive_processing(_appContext, __next_block_range.first_block, __next_block_range.last_block, 10000, __last_block);
+        CALL do_massive_processing(_appContext, __next_block_range.first_block, __next_block_range.last_block, 10000, __last_block);
       ELSE
         IF __commit_mode_changed THEN
           PERFORM set_config('synchronous_commit', __original_commit_mode, false);
           __commit_mode_changed := false;
         END IF;
-          CALL reptracker_app.processBlock(__next_block_range.first_block);
+          CALL processBlock(__next_block_range.first_block);
           __last_block := __next_block_range.first_block;
       END IF;
 

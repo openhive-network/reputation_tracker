@@ -2,8 +2,8 @@ SET ROLE reptracker_owner;
 
 
 --- Massive version of account reputation calculation.
-DROP FUNCTION IF EXISTS reptracker_app.process_block_range_data_a;
-CREATE OR REPLACE FUNCTION reptracker_app.process_block_range_data_a(
+DROP FUNCTION IF EXISTS reptracker_block_range_data;
+CREATE OR REPLACE FUNCTION reptracker_block_range_data(
   IN _first_block_num INT,
   IN _last_block_num INT
 )
@@ -17,7 +17,6 @@ AS $BODY$
 DECLARE
   _result INT;
 BEGIN
-RAISE NOTICE 'Gathering data to process block range: %, %', _first_block_num, _last_block_num;
 
 WITH select_ef_vote_ops AS MATERIALIZED
 (
@@ -26,7 +25,7 @@ SELECT o.id,
     o.trx_in_block,
     o.op_pos,
     o.body_binary::JSONB as body
-FROM hive.reptracker_app_operations_view o WHERE o.op_type_id = 72 
+FROM operations_view o WHERE o.op_type_id = 72 
 AND o.block_num BETWEEN _first_block_num AND _last_block_num ),
 selected_range AS MATERIALIZED 
 (
@@ -54,13 +53,13 @@ SELECT
   up.rshares AS up_rshares,  
   COALESCE((
     SELECT prd.rshares
-    FROM reptracker_app.hive_reputation_data_view prd
+    FROM hive_reputation_data_view prd
     WHERE 
       prd.author = up.author AND 
       prd.voter = up.voter AND 
       prd.permlink = up.permlink AND 
       prd.id < up.id AND 
-      NOT EXISTS (SELECT NULL FROM reptracker_app.deleted_comment_operation_view dp
+      NOT EXISTS (SELECT NULL FROM deleted_comment_operation_view dp
     WHERE dp.author = up.author and dp.permlink = up.permlink and dp.id between prd.id and up.id)
     ORDER BY prd.id DESC LIMIT 1
   ), 0) AS prev_rshares
@@ -68,7 +67,7 @@ FROM selected_range up
 ),
 balance_change AS MATERIALIZED 
 (
-  SELECT reptracker_app.calculate_account_reputations(  
+  SELECT calculate_account_reputations(  
       ja.up_id,
       ja.block_num, 
       ja.author,
@@ -79,8 +78,8 @@ balance_change AS MATERIALIZED
       ja.up_rshares, 
       ja.prev_rshares)
   FROM filtered_range ja
-  JOIN hive.accounts_view ha on ha.name = ja.author
-  JOIN hive.accounts_view hv on hv.name = ja.voter
+  JOIN accounts_view ha on ha.name = ja.author
+  JOIN accounts_view hv on hv.name = ja.voter
   ORDER BY ja.up_id
 )
 
@@ -90,8 +89,8 @@ END
 $BODY$
 ;
 
-DROP FUNCTION IF EXISTS reptracker_app.calculate_account_reputations;
-CREATE OR REPLACE FUNCTION reptracker_app.calculate_account_reputations(
+DROP FUNCTION IF EXISTS calculate_account_reputations;
+CREATE OR REPLACE FUNCTION calculate_account_reputations(
     _id BIGINT,
     _block_num INT,
     _author TEXT,
@@ -110,7 +109,7 @@ CREATE OR REPLACE FUNCTION reptracker_app.calculate_account_reputations(
     SET jit = OFF
 AS $BODY$
 DECLARE
-  __account_reputations reptracker_app.AccountReputation[];
+  __account_reputations AccountReputation[];
   __author_rep bigint;
   __voter_rep bigint;
   __implicit_voter_rep boolean;
@@ -125,11 +124,11 @@ BEGIN
 SELECT INTO __account_reputations
 ARRAY(
   SELECT 
-    ROW(default_values.account_id, COALESCE(ad.reputation, 0), COALESCE(ad.is_implicit, true), false)::reptracker_app.AccountReputation 
+    ROW(default_values.account_id, COALESCE(ad.reputation, 0), COALESCE(ad.is_implicit, true), false)::AccountReputation 
   FROM 
     (
       SELECT ar.account_id, ar.reputation, ar.is_implicit  
-      FROM reptracker_app.account_reputations ar
+      FROM account_reputations ar
       WHERE ar.account_id = _author_id OR ar.account_id = _voter_id
     ) AS ad
   RIGHT JOIN 
@@ -170,7 +169,7 @@ __implicit_author_rep := __author_rep = 0;
     __voter_rep := __author_rep;
   END IF;
 
-  __account_reputations[1] := ROW(_author_id, __author_rep, __implicit_author_rep, true)::reptracker_app.AccountReputation;
+  __account_reputations[1] := ROW(_author_id, __author_rep, __implicit_author_rep, true)::AccountReputation;
 
 IF __debug_log THEN 
     IF __implicit_author_rep THEN
@@ -190,7 +189,7 @@ END IF;
 IF __voter_rep >= 0 AND (__rshares >= 0 OR (__rshares < 0 AND NOT __implicit_voter_rep AND __voter_rep > __author_rep)) THEN
 
   __new_author_rep = __author_rep + (__rshares >> 6)::BIGINT;
-  __account_reputations[1] := ROW(_author_id, __new_author_rep, false, true)::reptracker_app.AccountReputation;
+  __account_reputations[1] := ROW(_author_id, __new_author_rep, false, true)::AccountReputation;
 
 IF __debug_log THEN 
     IF __implicit_author_rep THEN
@@ -202,7 +201,7 @@ IF __debug_log THEN
 
 END IF;
 
-INSERT INTO reptracker_app.account_reputations
+INSERT INTO account_reputations
   (account_id, reputation, is_implicit)
 SELECT ds.id, ds.reputation, ds.is_implicit
 FROM unnest(__account_reputations) ds

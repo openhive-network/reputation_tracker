@@ -48,7 +48,7 @@ def main():
 
         cursor = connection.cursor()
 
-        query = "SELECT reptracker_backend.dump_current_account_stats(%s)"
+        query = "SELECT reptracker_account_dump.dump_current_account_stats(%s)"
 
         # Iterate over objects inside 'reputations[]'
         for account in reputations:
