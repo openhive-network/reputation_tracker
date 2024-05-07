@@ -13,6 +13,15 @@ EXCEPTION WHEN duplicate_object THEN RAISE NOTICE '%, skipping', SQLERRM USING E
 END
 $$;
 
+DO $$
+BEGIN
+  CREATE ROLE reptracker_user WITH LOGIN INHERIT IN ROLE hive_applications_group;  
+EXCEPTION WHEN duplicate_object THEN RAISE NOTICE '%, skipping', SQLERRM USING ERRCODE = SQLSTATE;
+END
+$$;
+
 --- Allow to create schemas
+GRANT reptracker_owner TO haf_admin;
 GRANT reputation_tracker_writer_group TO reptracker_owner;
+GRANT reptracker_user TO reptracker_owner;
 
