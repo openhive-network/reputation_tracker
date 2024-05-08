@@ -9,6 +9,7 @@ SCRIPTDIR="$( cd -- "$(dirname "$0")" >/dev/null 2>&1 ; pwd -P )"
 POSTGRES_HOST="localhost"
 POSTGRES_PORT=5432
 POSTGRES_USER="reptracker_owner"
+REPTRACKER_SCHEMA=${REPTRACKER_SCHEMA:-"reptracker_app"}
 
 print_help () {
     echo "Usage: $0 [OPTION[=VALUE]]..."
@@ -31,6 +32,9 @@ while [ $# -gt 0 ]; do
         ;;
     --user=*)
         POSTGRES_USER="${1#*=}"
+        ;;
+    --schema=*)
+        REPTRACKER_SCHEMA="${1#*=}"
         ;;
     --help)
         print_help
@@ -55,8 +59,8 @@ done
 POSTGRES_ACCESS_ADMIN="postgresql://$POSTGRES_USER@$POSTGRES_HOST:$POSTGRES_PORT/haf_block_log"
 
 echo "Clearing tables..."
-psql "$POSTGRES_ACCESS_ADMIN" -v "ON_ERROR_STOP=on" -c "TRUNCATE reptracker_backend.account_reputation;"
-psql "$POSTGRES_ACCESS_ADMIN" -v "ON_ERROR_STOP=on" -c "TRUNCATE reptracker_backend.differing_accounts;"
+psql "$POSTGRES_ACCESS_ADMIN" -v "ON_ERROR_STOP=on" -c "TRUNCATE reptracker_account_dump.account_reputation;"
+psql "$POSTGRES_ACCESS_ADMIN" -v "ON_ERROR_STOP=on" -c "TRUNCATE reptracker_account_dump.differing_accounts;"
 
 # CI comes with psycopg2 preinstalled
 if [[ -z "${CI:-}" ]]; then
@@ -89,9 +93,9 @@ else
     timestamper="cat"
 fi
 
-psql "$POSTGRES_ACCESS_ADMIN" -v "ON_ERROR_STOP=on" -c "SELECT reptracker_backend.compare_accounts();" 2>&1 | tee -i >(eval "$timestamper" > "account_dump_test_83m.log")
+psql "$POSTGRES_ACCESS_ADMIN" -v "ON_ERROR_STOP=on" -c "SET SEARCH_PATH TO ${REPTRACKER_SCHEMA};" -c "SELECT reptracker_account_dump.compare_accounts();" 2>&1 | tee -i >(eval "$timestamper" > "account_dump_test_83m.log")
 
-DIFFERING_ACCOUNTS=$(psql "$POSTGRES_ACCESS_ADMIN" -v "ON_ERROR_STOP=on" -t -A  -c "SELECT * FROM reptracker_backend.differing_accounts;")
+DIFFERING_ACCOUNTS=$(psql "$POSTGRES_ACCESS_ADMIN" -v "ON_ERROR_STOP=on" -t -A  -c "SELECT * FROM reptracker_account_dump.differing_accounts;")
 
 if [ -z "$DIFFERING_ACCOUNTS" ]; then
     echo "Account balances are correct!"
@@ -99,7 +103,7 @@ if [ -z "$DIFFERING_ACCOUNTS" ]; then
     exit 0
 else
     echo "Account balances are incorrect..."
-    psql "$POSTGRES_ACCESS_ADMIN" -v "ON_ERROR_STOP=on" -c "SELECT * FROM reptracker_backend.differing_accounts;"
+    psql "$POSTGRES_ACCESS_ADMIN" -v "ON_ERROR_STOP=on" -c "SELECT * FROM reptracker_account_dump.differing_accounts;"
     rm -f "${SCRIPTDIR}/accounts_dump_83m.json"
     exit 3
 fi

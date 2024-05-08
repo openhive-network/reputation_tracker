@@ -1,6 +1,7 @@
 .tests/
-reptracker_app.log*
+reptracker_sync.log*
 install_app.log
 uninstall_app.log
 account_dump_test.log
 set_version_in_sql.pgsql
+accounts_dump.json

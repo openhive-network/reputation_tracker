@@ -1,12 +1,7 @@
 #! /bin/bash
 
-SCRIPTPATH="$( cd -- "$(dirname "$0")" >/dev/null 2>&1 ; pwd -P )"
-SRCPATH="${SCRIPTPATH}/../"
-
-LOG_FILE=uninstall_app.log
-source "$SCRIPTPATH/common.sh"
-
-log_exec_params "$@"
+set -e
+set -o pipefail
 
 # Script reponsible for execution of all actions required to finish configuration of the database holding a HAF database to work correctly with hivemind.
 
@@ -23,10 +18,12 @@ print_help () {
     echo
 }
 
-POSTGRES_HOST="/var/run/postgresql"
-POSTGRES_PORT=5432
-POSTGRES_URL=""
-DROP_INDEXES=0
+POSTGRES_USER=${POSTGRES_USER:-"haf_admin"}
+POSTGRES_HOST=${POSTGRES_HOST:-"localhost"}
+POSTGRES_PORT=${POSTGRES_PORT:-5432}
+POSTGRES_URL=${POSTGRES_URL:-""}
+REPTRACKER_SCHEMA=${REPTRACKER_SCHEMA:-"reptracker_app"}
+DROP_INDEXES=${DROP_INDEXES:-0}
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -36,11 +33,17 @@ while [ $# -gt 0 ]; do
     --port=*)
         POSTGRES_PORT="${1#*=}"
         ;;
+    --user=*)
+        POSTGRES_USER="${1#*=}"
+        ;;
     --postgres-url=*)
         POSTGRES_URL="${1#*=}"
         ;;
     --drop-indexes*)
         DROP_INDEXES=1
+        ;;
+    --schema=*)
+        REPTRACKER_SCHEMA="${1#*=}"
         ;;
     --help)
         print_help
@@ -62,34 +65,50 @@ while [ $# -gt 0 ]; do
     shift
 done
 
-if [ -z "$POSTGRES_URL" ]; then
-  POSTGRES_ACCESS="postgresql://haf_admin@$POSTGRES_HOST:$POSTGRES_PORT/haf_block_log"
-else
-  POSTGRES_ACCESS=$POSTGRES_URL
-fi
+POSTGRES_ACCESS=${POSTGRES_URL:-"postgresql://$POSTGRES_USER@$POSTGRES_HOST:$POSTGRES_PORT/haf_block_log"}
 
-
-psql $POSTGRES_ACCESS -v ON_ERROR_STOP=on -f - <<EOF
-
-DO \$$
+uninstall_app() {
+    remove_context_sql=$(cat << EOF
+do
+\$\$
 BEGIN
-IF hive.app_context_exists('reptracker_app') THEN
-    RAISE NOTICE 'Attempting to REMOVE a HAF application context for reputation_tracker app...';
-    PERFORM hive.app_remove_context('reptracker_app');
-END IF;
-END
-\$$;
+  IF hive.app_context_exists('${REPTRACKER_SCHEMA}') THEN
+   perform hive.app_remove_context('${REPTRACKER_SCHEMA}');
+  END IF;
+END\$\$;
 EOF
+)
 
-psql -aw $POSTGRES_ACCESS -v ON_ERROR_STOP=on -c 'DROP OWNED BY reptracker_owner CASCADE;' || true
-psql -aw $POSTGRES_ACCESS -v ON_ERROR_STOP=on -c 'DROP ROLE IF EXISTS reptracker_owner, reputation_tracker_writer_group;'
+    drop_users_sql=$(cat <<EOF
+do
+\$\$
+BEGIN
+ IF NOT EXISTS( SELECT 1 FROM hive.contexts hc WHERE owner = 'reptracker_owner' ) THEN
+    DROP OWNED BY reptracker_owner CASCADE;
+    DROP ROLE reptracker_owner;
+    DROP OWNED BY reptracker_user CASCADE;
+    DROP ROLE reptracker_user;
+    DROP OWNED BY reputation_tracker_writer_group CASCADE;
+    DROP ROLE reputation_tracker_writer_group;
+ END IF;
+END\$\$;
+EOF
+)
 
-if [ ${DROP_INDEXES} -eq 1 ]; then
-  echo "Attempting to drop indexes built by application"
+    psql "$POSTGRES_ACCESS" -v "ON_ERROR_STOP=OFF" -c "${remove_context_sql}"
+    psql "$POSTGRES_ACCESS" -v "ON_ERROR_STOP=OFF" -c "DROP SCHEMA IF EXISTS ${REPTRACKER_SCHEMA} CASCADE;"
 
-  psql -aw $POSTGRES_ACCESS -v ON_ERROR_STOP=on -c 'DROP INDEX IF EXISTS hive.effective_comment_vote_idx;'
-  psql -aw $POSTGRES_ACCESS -v ON_ERROR_STOP=on -c 'DROP INDEX IF EXISTS hive.delete_comment_op_idx;'
-  psql -aw $POSTGRES_ACCESS -v ON_ERROR_STOP=on -c 'DROP INDEX IF EXISTS hive.stable_id_block_num_effective_vote_idx;'
-else
-  echo "Indexes created by application have been preserved"
-fi
+    psql "$POSTGRES_ACCESS" -c "${drop_users_sql}" || true
+
+    if [ ${DROP_INDEXES} -eq 1 ]; then
+    echo "Attempting to drop indexes built by application"
+
+    psql -aw $POSTGRES_ACCESS -v ON_ERROR_STOP=on -c 'DROP INDEX IF EXISTS hive.effective_comment_vote_idx;'
+    psql -aw $POSTGRES_ACCESS -v ON_ERROR_STOP=on -c 'DROP INDEX IF EXISTS hive.delete_comment_op_idx;'
+    psql -aw $POSTGRES_ACCESS -v ON_ERROR_STOP=on -c 'DROP INDEX IF EXISTS hive.stable_id_block_num_effective_vote_idx;'
+    else
+      echo "Indexes created by application have been preserved"
+    fi
+}
+
+uninstall_app

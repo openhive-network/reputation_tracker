@@ -18,4 +18,4 @@ GIT_DIR=${2:-"$1/.git"}
 # Rationale:  https://www.shellcheck.net/wiki/SC2006
 GIT_HASH=$(git --git-dir="$GIT_DIR" --work-tree="$GIT_WORK_TREE" rev-parse HEAD)
 
-echo "SELECT btracker_app.set_version('$GIT_HASH');" > "$PATH_TO_SQL_VERSION_FILE"
+echo "SELECT reptracker_app.set_version('$GIT_HASH');" > "$PATH_TO_SQL_VERSION_FILE"

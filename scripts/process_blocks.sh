@@ -1,13 +1,6 @@
 #! /bin/bash
-
-SCRIPTPATH="$( cd -- "$(dirname "$0")" >/dev/null 2>&1 ; pwd -P )"
-SRCPATH="${SCRIPTPATH}/../"
-
-LOG_FILE=reptracker_app.log
-source "$SCRIPTPATH/common.sh"
-
-log_exec_params "$@"
-
+set -e
+set -o pipefail
 # Script reponsible for execution of all actions required to finish configuration of the database holding a HAF database to work correctly with hivemind.
 
 print_help () {
@@ -23,10 +16,12 @@ print_help () {
     echo
 }
 
-POSTGRES_HOST="/var/run/postgresql"
-POSTGRES_PORT=5432
-POSTGRES_URL=""
-MAX_BLOCK_LIMIT=0
+POSTGRES_USER=${POSTGRES_USER:-"reptracker_owner"}
+POSTGRES_HOST=${POSTGRES_HOST:-"localhost"}
+POSTGRES_PORT=${POSTGRES_PORT:-5432}
+POSTGRES_URL=${POSTGRES_URL:-""}
+MAX_BLOCK_LIMIT=${MAX_BLOCK_LIMIT:-0}
+REPTRACKER_SCHEMA=${REPTRACKER_SCHEMA:-"reptracker_app"}
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -36,13 +31,18 @@ while [ $# -gt 0 ]; do
     --port=*)
         POSTGRES_PORT="${1#*=}"
         ;;
+    --user=*)
+        POSTGRES_USER="${1#*=}"
+        ;;
     --postgres-url=*)
         POSTGRES_URL="${1#*=}"
         ;;
     --stop-at-block=*)
         MAX_BLOCK_LIMIT="${1#*=}"
         ;;
-
+    --schema=*)
+        REPTRACKER_SCHEMA="${1#*=}"
+        ;;
     --help)
         print_help
         exit 0
@@ -63,10 +63,12 @@ while [ $# -gt 0 ]; do
     shift
 done
 
-if [ -z "$POSTGRES_URL" ]; then
-  POSTGRES_ACCESS="postgresql://reptracker_owner@$POSTGRES_HOST:$POSTGRES_PORT/haf_block_log"
-else
-  POSTGRES_ACCESS=$POSTGRES_URL
-fi
+POSTGRES_ACCESS=${POSTGRES_URL:-"postgresql://$POSTGRES_USER@$POSTGRES_HOST:$POSTGRES_PORT/haf_block_log"}
 
-psql $POSTGRES_ACCESS -v ON_ERROR_STOP=on -U reptracker_owner -c '\timing' -c "CALL reptracker_app.main('reptracker_app', $MAX_BLOCK_LIMIT);" 2>&1 | ts '%Y-%m-%d %H:%M:%.S'
+process_blocks() {
+    n_blocks="${1:-null}"
+    log_file="reptracker_sync.log"
+    psql "$POSTGRES_ACCESS" -v "ON_ERROR_STOP=on" -v REPTRACKER_SCHEMA="${REPTRACKER_SCHEMA}" -c "\timing" -c "SET SEARCH_PATH TO ${REPTRACKER_SCHEMA};" -c "CALL ${REPTRACKER_SCHEMA}.main('${REPTRACKER_SCHEMA}');" 2>&1 | tee -i $log_file
+}
+
+process_blocks "$PROCESS_BLOCK_LIMIT"

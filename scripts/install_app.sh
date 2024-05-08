@@ -1,12 +1,10 @@
 #! /bin/bash
 
-SCRIPTPATH="$( cd -- "$(dirname "$0")" >/dev/null 2>&1 ; pwd -P )"
+set -e
+set -o pipefail
+
+SCRIPTPATH="$( cd -- "$(dirname "$0")" >/dev/null 2>&1 || exit 1; pwd -P )"
 SRCPATH="${SCRIPTPATH}/../"
-
-LOG_FILE=install_app.log
-source "$SCRIPTPATH/common.sh"
-
-log_exec_params "$@"
 
 # Script reponsible for execution of all actions required to finish configuration of the database holding a HAF database to work correctly with hivemind.
 
@@ -22,10 +20,12 @@ print_help () {
     echo
 }
 
-POSTGRES_HOST="/var/run/postgresql"
-POSTGRES_PORT=5432
-POSTGRES_URL=""
 reptracker_dir="$SCRIPTPATH/.."
+POSTGRES_USER=${POSTGRES_USER:-"haf_admin"}
+POSTGRES_HOST=${POSTGRES_HOST:-"localhost"}
+POSTGRES_PORT=${POSTGRES_PORT:-5432}
+POSTGRES_URL=${POSTGRES_URL:-""}
+REPTRACKER_SCHEMA=${REPTRACKER_SCHEMA:-"reptracker_app"}
 
 
 while [ $# -gt 0 ]; do
@@ -38,6 +38,9 @@ while [ $# -gt 0 ]; do
         ;;
     --postgres-url=*)
         POSTGRES_URL="${1#*=}"
+        ;;
+    --schema=*)
+        REPTRACKER_SCHEMA="${1#*=}"
         ;;
     --help)
         print_help
@@ -59,24 +62,23 @@ while [ $# -gt 0 ]; do
     shift
 done
 
-if [ -z "$POSTGRES_URL" ]; then
-  POSTGRES_ACCESS="postgresql://haf_admin@$POSTGRES_HOST:$POSTGRES_PORT/haf_block_log"
-else
-  POSTGRES_ACCESS=$POSTGRES_URL
-fi
+POSTGRES_ACCESS=${POSTGRES_URL:-"postgresql://$POSTGRES_USER@$POSTGRES_HOST:$POSTGRES_PORT/haf_block_log"}
 
-pushd "$reptracker_dir"
-./scripts/generate_version_sql.sh "$reptracker_dir"
-popd
+#pushd "$reptracker_dir"
+#./scripts/generate_version_sql.sh "$reptracker_dir"
+#popd
 
-psql $POSTGRES_ACCESS -v ON_ERROR_STOP=on -f "${SRCPATH}/db/builtin_roles.sql"
-psql $POSTGRES_ACCESS -v ON_ERROR_STOP=on -f "${SRCPATH}/db/database_schema.sql"
-psql $POSTGRES_ACCESS -v ON_ERROR_STOP=on -f "${SRCPATH}/db/rep_views.sql"
-psql $POSTGRES_ACCESS -v ON_ERROR_STOP=on -f "${SRCPATH}/db/rep_indexes.sql"
-psql $POSTGRES_ACCESS -v ON_ERROR_STOP=on -f "${SRCPATH}/db/process_block_range.sql"
-psql $POSTGRES_ACCESS -v ON_ERROR_STOP=on -f "${SRCPATH}/db/rep_helpers.sql"
-psql $POSTGRES_ACCESS -v ON_ERROR_STOP=on -f "${SRCPATH}/db/main_loop.sql"
+echo "Installing app..."
+psql "$POSTGRES_ACCESS" -v ON_ERROR_STOP=on -f "$SRCPATH/db/builtin_roles.sql"
+psql "$POSTGRES_ACCESS" -v ON_ERROR_STOP=on -c "SET ROLE reptracker_owner;CREATE SCHEMA IF NOT EXISTS ${REPTRACKER_SCHEMA} AUTHORIZATION reptracker_owner;"
+psql "$POSTGRES_ACCESS" -v ON_ERROR_STOP=on -c "SET SEARCH_PATH TO ${REPTRACKER_SCHEMA};" -f "$SRCPATH/db/database_schema.sql"
+psql "$POSTGRES_ACCESS" -v ON_ERROR_STOP=on -c "SET SEARCH_PATH TO ${REPTRACKER_SCHEMA};" -f "$SRCPATH/db/rep_views.sql"
+psql "$POSTGRES_ACCESS" -v ON_ERROR_STOP=on -c "SET SEARCH_PATH TO ${REPTRACKER_SCHEMA};" -f "$SRCPATH/db/rep_indexes.sql"
+psql "$POSTGRES_ACCESS" -v ON_ERROR_STOP=on -c "SET SEARCH_PATH TO ${REPTRACKER_SCHEMA};" -f "$SRCPATH/db/process_block_range.sql"
+psql "$POSTGRES_ACCESS" -v ON_ERROR_STOP=on -c "SET SEARCH_PATH TO ${REPTRACKER_SCHEMA};" -f "$SRCPATH/db/rep_helpers.sql"
+psql "$POSTGRES_ACCESS" -v ON_ERROR_STOP=on -c "SET SEARCH_PATH TO ${REPTRACKER_SCHEMA};" -f "$SRCPATH/db/main_loop.sql"
+psql "$POSTGRES_ACCESS" -v ON_ERROR_STOP=on -c "SET SEARCH_PATH TO ${REPTRACKER_SCHEMA};" -f "$SRCPATH/endpoints/get_reputation.sql"
+psql "$POSTGRES_ACCESS" -v ON_ERROR_STOP=on -c "SET SEARCH_PATH TO ${REPTRACKER_SCHEMA};" -f "$SRCPATH/account_dump/account_rep_stats.sql"
+psql "$POSTGRES_ACCESS" -v ON_ERROR_STOP=on -c "SET SEARCH_PATH TO ${REPTRACKER_SCHEMA};" -f "$SRCPATH/account_dump/compare_accounts.sql"
+#psql "$POSTGRES_ACCESS" -v ON_ERROR_STOP=on -c "SET SEARCH_PATH TO ${REPTRACKER_SCHEMA};" -f "$SRCPATH/scripts/set_version_in_sql.pgsql"
 
-psql $POSTGRES_ACCESS -v ON_ERROR_STOP=on -f "${SRCPATH}/account_dump/account_rep_stats.sql"
-psql $POSTGRES_ACCESS -v ON_ERROR_STOP=on -f "${SRCPATH}/account_dump/compare_accounts.sql"
-psql $POSTGRES_ACCESS -v ON_ERROR_STOP=on -f "${SRCPATH}/scripts/set_version_in_sql.pgsql"
