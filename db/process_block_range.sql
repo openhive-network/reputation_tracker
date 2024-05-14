@@ -78,8 +78,8 @@ balance_change AS MATERIALIZED
       ja.up_rshares, 
       ja.prev_rshares)
   FROM filtered_range ja
-  JOIN accounts_view ha on ha.name = ja.author
-  JOIN accounts_view hv on hv.name = ja.voter
+  JOIN hive.accounts_view ha on ha.name = ja.author
+  JOIN hive.accounts_view hv on hv.name = ja.voter
   ORDER BY ja.up_id
 )
 
