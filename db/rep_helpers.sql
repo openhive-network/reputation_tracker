@@ -8,8 +8,7 @@ $$
 BEGIN
   RETURN continue_processing FROM app_status LIMIT 1;
 END
-$$
-;
+$$;
 
 CREATE OR REPLACE FUNCTION allowProcessing()
 RETURNS VOID
@@ -19,10 +18,10 @@ $$
 BEGIN
   UPDATE app_status SET continue_processing = True;
 END
-$$
-;
+$$;
 
---- Helper function to be called from separate transaction (must be committed) to safely stop execution of the application.
+--- Helper function to be called from separate transaction 
+--- (must be committed) to safely stop execution of the application.
 CREATE OR REPLACE FUNCTION stopProcessing()
 RETURNS VOID
 LANGUAGE 'plpgsql'
@@ -31,8 +30,7 @@ $$
 BEGIN
   UPDATE app_status SET continue_processing = False;
 END
-$$
-;
+$$;
 
 CREATE OR REPLACE FUNCTION get_version()
 RETURNS TEXT

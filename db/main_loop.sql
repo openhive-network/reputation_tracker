@@ -1,7 +1,11 @@
 SET ROLE reptracker_owner;
 
-
-CREATE OR REPLACE PROCEDURE do_massive_processing(IN _appContext VARCHAR, in _from INT, in _to INT, IN _step INT, INOUT _last_block integer)
+CREATE OR REPLACE PROCEDURE do_massive_processing(
+    IN _appContext VARCHAR, 
+    IN _from INT, IN _to INT, 
+    IN _step INT, 
+    INOUT _last_block INT
+)
 LANGUAGE 'plpgsql'
 AS
 $$
@@ -24,8 +28,6 @@ BEGIN
   FROM select_account_reputations sar
   WHERE sar.ar_id IS NULL
   ;
-
-  --- You can do here also other things to speedup your app, i.e. disable constrains, remove indexes etc.
 
   FOR b IN _from .. _to BY _step LOOP
     _last_block := b + _step - 1;
@@ -51,12 +53,9 @@ BEGIN
   RAISE NOTICE 'Attaching HAF application context at block: %.', _last_block;
   PERFORM hive.app_context_attach(_appContext);
 
- --- You should enable here all things previously disabled at begin of this function...
-
  RAISE NOTICE 'Leaving massive processing of block range: <%, %>...', _from, _last_block;
 END
-$$
-;
+$$;
 
 CREATE OR REPLACE PROCEDURE processBlock(in _block INT)
 LANGUAGE 'plpgsql'
@@ -69,21 +68,24 @@ BEGIN
   RAISE NOTICE 'Processing block: %...', _block;
   __start_ts := clock_timestamp();
   PERFORM reptracker_block_range_data(_block, _block);
-  COMMIT; -- For single block processing we want to commit all changes for each one.
+  COMMIT; 
   __end_ts := clock_timestamp();
 
   RAISE NOTICE 'Done in time: % ms
   ', 1000 * (extract(epoch FROM __end_ts - __start_ts));
 END
-$$
-;
+$$;
 
 /** Application entry point, which:
   - defines its data schema,
   - creates HAF application context,
-  - starts application main-loop (which iterates infinitely). To stop it call `stopProcessing();` from another session and commit its trasaction.
+  - starts application main-loop (which iterates infinitely). 
+  - To stop it call `stopProcessing();` from another session and commit its trasaction.
 */
-CREATE OR REPLACE PROCEDURE main(IN _appContext VARCHAR = 'reptracker_app', IN _maxBlockLimit INT = 0)
+CREATE OR REPLACE PROCEDURE main(
+    IN _appContext VARCHAR = 'reptracker_app',
+    IN _maxBlockLimit INT = 0
+)
 LANGUAGE 'plpgsql'
 AS
 $$
@@ -128,8 +130,6 @@ BEGIN
         __next_block_range.last_block  := _maxBlockLimit;
       END IF;
 
-      --RAISE NOTICE 'Attempting to process block range: <%,%>', __next_block_range.first_block, __next_block_range.last_block;
-
       __block_range_len := __next_block_range.last_block - __next_block_range.first_block + 1;
 
       IF __block_range_len >= __massive_processing_threshold THEN
@@ -154,8 +154,7 @@ BEGIN
 
   RAISE NOTICE 'Exiting application main loop at processed block: %.', __last_block;
 END
-$$
-;
+$$;
 
 GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA reptracker_app TO reputation_tracker_writer_group;
 

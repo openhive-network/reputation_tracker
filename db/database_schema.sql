@@ -44,8 +44,7 @@ CREATE TABLE IF NOT EXISTS account_reputations
     reputation BIGINT NOT NULL,
     is_implicit boolean,
     CONSTRAINT PK_account_reputations PRIMARY KEY (account_id)
-)
-;
+);
 
 PERFORM hive.app_register_table( __schema_name, 'account_reputations', __schema_name );
 
@@ -56,8 +55,7 @@ CREATE TYPE AccountReputation AS
   reputation BIGINT,
   is_implicit BOOLEAN, 
   changed BOOLEAN
-)
-;
+);
 
 END
 $$;

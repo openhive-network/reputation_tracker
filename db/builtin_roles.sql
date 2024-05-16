@@ -24,4 +24,3 @@ $$;
 GRANT reptracker_owner TO haf_admin;
 GRANT reputation_tracker_writer_group TO reptracker_owner;
 GRANT reptracker_user TO reptracker_owner;
-

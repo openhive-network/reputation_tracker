@@ -1,18 +1,17 @@
 SET ROLE reptracker_owner;
 
-
 --- Massive version of account reputation calculation.
 DROP FUNCTION IF EXISTS reptracker_block_range_data;
 CREATE OR REPLACE FUNCTION reptracker_block_range_data(
-  IN _first_block_num INT,
-  IN _last_block_num INT
+    IN _first_block_num INT,
+    IN _last_block_num INT
 )
-    RETURNS VOID
-    LANGUAGE 'plpgsql'
-    VOLATILE 
-    SET from_collapse_limit = 16
-    SET join_collapse_limit = 16
-    SET jit = OFF
+RETURNS VOID
+LANGUAGE 'plpgsql'
+VOLATILE 
+SET from_collapse_limit = 16
+SET join_collapse_limit = 16
+SET jit = OFF
 AS $BODY$
 DECLARE
   _result INT;
@@ -86,8 +85,7 @@ balance_change AS MATERIALIZED
 SELECT COUNT(*) FROM balance_change INTO _result;
 
 END
-$BODY$
-;
+$BODY$;
 
 DROP FUNCTION IF EXISTS calculate_account_reputations;
 CREATE OR REPLACE FUNCTION calculate_account_reputations(
@@ -100,13 +98,13 @@ CREATE OR REPLACE FUNCTION calculate_account_reputations(
     _voter_id INT,
     _rshares BIGINT,
     _prev_rshares BIGINT
-  )
-    RETURNS VOID
-    LANGUAGE 'plpgsql'
-    VOLATILE 
-    SET from_collapse_limit = 16
-    SET join_collapse_limit = 16
-    SET jit = OFF
+)
+RETURNS VOID
+LANGUAGE 'plpgsql'
+VOLATILE 
+SET from_collapse_limit = 16
+SET join_collapse_limit = 16
+SET jit = OFF
 AS $BODY$
 DECLARE
   __account_reputations AccountReputation[];
@@ -213,8 +211,7 @@ SET
 ;
   
 END
-$BODY$
-;
+$BODY$;
 
 GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA reptracker_app TO reputation_tracker_writer_group;
 
