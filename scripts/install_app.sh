@@ -20,7 +20,7 @@ print_help () {
     echo
 }
 
-reptracker_dir="$SCRIPTPATH/.."
+#reptracker_dir="$SCRIPTPATH/.."
 POSTGRES_USER=${POSTGRES_USER:-"haf_admin"}
 POSTGRES_HOST=${POSTGRES_HOST:-"localhost"}
 POSTGRES_PORT=${POSTGRES_PORT:-5432}

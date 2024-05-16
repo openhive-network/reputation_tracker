@@ -66,7 +66,6 @@ done
 POSTGRES_ACCESS=${POSTGRES_URL:-"postgresql://$POSTGRES_USER@$POSTGRES_HOST:$POSTGRES_PORT/haf_block_log"}
 
 process_blocks() {
-    n_blocks="${1:-null}"
     log_file="reptracker_sync.log"
     psql "$POSTGRES_ACCESS" -v "ON_ERROR_STOP=on" -v REPTRACKER_SCHEMA="${REPTRACKER_SCHEMA}" -c "\timing" -c "SET SEARCH_PATH TO ${REPTRACKER_SCHEMA};" -c "CALL ${REPTRACKER_SCHEMA}.main('${REPTRACKER_SCHEMA}');" 2>&1 | tee -i $log_file
 }
