@@ -70,15 +70,13 @@ balance_change AS MATERIALIZED
       ja.up_id,
       ja.block_num, 
       ja.author,
-      ha.id,
+      (SELECT ha.id FROM hive.accounts_view ha WHERE ha.name = ja.author),
       ja.permlink, 
       ja.voter, 
-      hv.id,
+      (SELECT hv.id FROM hive.accounts_view hv WHERE hv.name = ja.voter),
       ja.up_rshares, 
       ja.prev_rshares)
   FROM filtered_range ja
-  JOIN hive.accounts_view ha on ha.name = ja.author
-  JOIN hive.accounts_view hv on hv.name = ja.voter
   ORDER BY ja.up_id
 )
 
