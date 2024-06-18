@@ -1,11 +1,16 @@
 -- noqa: disable=CP03
-
 SET ROLE reptracker_owner;
 
 DO $$
-  DECLARE __schema_name VARCHAR;
+DECLARE 
+  __schema_name VARCHAR;
+  v_is_forking BOOLEAN;
+  v_is_attached BOOLEAN;
 BEGIN
   SHOW SEARCH_PATH INTO __schema_name;
+
+  v_is_forking := current_setting('custom.is_forking')::BOOLEAN;
+  v_is_attached := current_setting('custom.is_attached')::BOOLEAN;
 
   RAISE NOTICE 'reputation_tracker will be installed in schema % with context %', __schema_name, __schema_name;
 
@@ -17,8 +22,8 @@ BEGIN
   PERFORM hive.app_create_context(
     _name =>__schema_name,
     _schema => __schema_name,
-    _is_forking => TRUE,
-    _is_attached => FALSE
+    _is_forking => v_is_forking,
+    _is_attached => v_is_attached
   );
 
 CREATE TABLE IF NOT EXISTS app_status

@@ -13,9 +13,11 @@ print_help () {
     echo
     echo "Allows to setup a database already filled by HAF instance, to work with reputation_tracker application."
     echo "OPTIONS:"
-    echo "  --host=VALUE         Allows to specify a PostgreSQL host location (defaults to /var/run/postgresql)"
-    echo "  --port=NUMBER        Allows to specify a PostgreSQL operating port (defaults to 5432)"
-    echo "  --postgres-url=URL   Allows to specify a PostgreSQL URL (in opposite to separate --host and --port options)"
+    echo "  --host=VALUE              Allows to specify a PostgreSQL host location (defaults to /var/run/postgresql)"
+    echo "  --port=NUMBER             Allows to specify a PostgreSQL operating port (defaults to 5432)"
+    echo "  --postgres-url=URL        Allows to specify a PostgreSQL URL (in opposite to separate --host and --port options)"
+    echo "  --is_forking=TRUE/FALSE   Allows to specify if app should be forking or not (defaults to true)"
+    echo "  --is_attached=TRUE/FALSE  Allows to specify if app starts attached or detached (defaults to false)"
     echo "  --help               Display this help screen and exit"
     echo
 }
@@ -26,7 +28,8 @@ POSTGRES_HOST=${POSTGRES_HOST:-"localhost"}
 POSTGRES_PORT=${POSTGRES_PORT:-5432}
 POSTGRES_URL=${POSTGRES_URL:-""}
 REPTRACKER_SCHEMA=${REPTRACKER_SCHEMA:-"reptracker_app"}
-
+IS_FORKING=${IS_FORKING:-"true"}
+IS_ATTACHED=${IS_ATTACHED:-"false"}
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -41,6 +44,12 @@ while [ $# -gt 0 ]; do
         ;;
     --schema=*)
         REPTRACKER_SCHEMA="${1#*=}"
+        ;;
+    --is_forking=*)
+        IS_FORKING="${1#*=}"
+        ;;
+    --is_attached=*)
+        IS_ATTACHED="${1#*=}"
         ;;
     --help)
         print_help
@@ -71,7 +80,7 @@ POSTGRES_ACCESS=${POSTGRES_URL:-"postgresql://$POSTGRES_USER@$POSTGRES_HOST:$POS
 echo "Installing app..."
 psql "$POSTGRES_ACCESS" -v ON_ERROR_STOP=on -f "$SRCPATH/db/builtin_roles.sql"
 psql "$POSTGRES_ACCESS" -v ON_ERROR_STOP=on -c "SET ROLE reptracker_owner;CREATE SCHEMA IF NOT EXISTS ${REPTRACKER_SCHEMA} AUTHORIZATION reptracker_owner;"
-psql "$POSTGRES_ACCESS" -v ON_ERROR_STOP=on -c "SET SEARCH_PATH TO ${REPTRACKER_SCHEMA};" -f "$SRCPATH/db/database_schema.sql"
+psql "$POSTGRES_ACCESS" -v ON_ERROR_STOP=on -c "SET custom.is_forking = '$IS_FORKING'; SET custom.is_attached = '$IS_ATTACHED'; SET SEARCH_PATH TO ${REPTRACKER_SCHEMA};" -f "$SRCPATH/db/database_schema.sql"
 psql "$POSTGRES_ACCESS" -v ON_ERROR_STOP=on -c "SET SEARCH_PATH TO ${REPTRACKER_SCHEMA};" -f "$SRCPATH/db/rep_views.sql"
 psql "$POSTGRES_ACCESS" -v ON_ERROR_STOP=on -c "SET SEARCH_PATH TO ${REPTRACKER_SCHEMA};" -f "$SRCPATH/db/rep_indexes.sql"
 psql "$POSTGRES_ACCESS" -v ON_ERROR_STOP=on -c "SET SEARCH_PATH TO ${REPTRACKER_SCHEMA};" -f "$SRCPATH/db/process_block_range.sql"
