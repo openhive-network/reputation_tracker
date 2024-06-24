@@ -211,6 +211,5 @@ SET
 END
 $BODY$;
 
-GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA reptracker_app TO reputation_tracker_writer_group;
 
 RESET ROLE;

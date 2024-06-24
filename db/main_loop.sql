@@ -83,7 +83,7 @@ $$;
   - To stop it call `stopProcessing();` from another session and commit its trasaction.
 */
 CREATE OR REPLACE PROCEDURE main(
-    IN _appContext VARCHAR = 'reptracker_app',
+    IN _appContext VARCHAR,
     IN _maxBlockLimit INT = 0
 )
 LANGUAGE 'plpgsql'
@@ -156,6 +156,5 @@ BEGIN
 END
 $$;
 
-GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA reptracker_app TO reputation_tracker_writer_group;
 
 RESET ROLE;

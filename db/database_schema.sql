@@ -62,12 +62,9 @@ CREATE TYPE AccountReputation AS
   changed BOOLEAN
 );
 
+
 END
 $$;
 
-GRANT USAGE ON SCHEMA reptracker_app TO reputation_tracker_writer_group;
---- Only data writers can write to such table(s)
-GRANT ALL ON app_status TO reputation_tracker_writer_group;
-GRANT ALL ON account_reputations TO reputation_tracker_writer_group;
 
 RESET ROLE;
