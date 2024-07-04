@@ -5,12 +5,13 @@ DO $$
 DECLARE 
   __schema_name VARCHAR;
   v_is_forking BOOLEAN;
-  v_is_attached BOOLEAN;
+  synchronization_stages hive.application_stages;
 BEGIN
   SHOW SEARCH_PATH INTO __schema_name;
 
+  synchronization_stages := ARRAY[( 'MASSIVE_PROCESSING', 101, 10000 ), hive.live_stage()]::hive.application_stages;
+
   v_is_forking := current_setting('custom.is_forking')::BOOLEAN;
-  v_is_attached := current_setting('custom.is_attached')::BOOLEAN;
 
   RAISE NOTICE 'reputation_tracker will be installed in schema % with context %', __schema_name, __schema_name;
 
@@ -23,19 +24,21 @@ BEGIN
     _name =>__schema_name,
     _schema => __schema_name,
     _is_forking => v_is_forking,
-    _is_attached => v_is_attached
+    _is_attached => FALSE,
+    _stages => synchronization_stages
   );
 
-CREATE TABLE IF NOT EXISTS app_status
+CREATE TABLE IF NOT EXISTS reptracker_app_status
 (
   continue_processing BOOLEAN NOT NULL,
-  last_processed_block INT NOT NULL
+  last_processed_block INT NOT NULL,
+  is_accounts_copied BOOLEAN
 );
 
-INSERT INTO app_status
-(continue_processing, last_processed_block)
+INSERT INTO reptracker_app_status
+(continue_processing, last_processed_block, is_accounts_copied)
 VALUES
-(True, 0)
+(True, 0, False)
 ;
 
 CREATE TABLE IF NOT EXISTS version(

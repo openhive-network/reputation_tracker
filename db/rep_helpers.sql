@@ -2,21 +2,21 @@ SET ROLE reptracker_owner;
 
 CREATE OR REPLACE FUNCTION continueProcessing()
 RETURNS BOOLEAN
-LANGUAGE 'plpgsql'
+LANGUAGE 'plpgsql' STABLE
 AS
 $$
 BEGIN
-  RETURN continue_processing FROM app_status LIMIT 1;
+  RETURN continue_processing FROM reptracker_app_status LIMIT 1;
 END
 $$;
 
 CREATE OR REPLACE FUNCTION allowProcessing()
 RETURNS VOID
-LANGUAGE 'plpgsql'
+LANGUAGE 'plpgsql' VOLATILE
 AS
 $$
 BEGIN
-  UPDATE app_status SET continue_processing = True;
+  UPDATE reptracker_app_status SET continue_processing = True;
 END
 $$;
 
@@ -24,13 +24,34 @@ $$;
 --- (must be committed) to safely stop execution of the application.
 CREATE OR REPLACE FUNCTION stopProcessing()
 RETURNS VOID
+LANGUAGE 'plpgsql' VOLATILE
+AS
+$$
+BEGIN
+  UPDATE reptracker_app_status SET continue_processing = False;
+END
+$$;
+
+CREATE OR REPLACE FUNCTION isAccountsCopied()
+RETURNS BOOLEAN
+LANGUAGE 'plpgsql' STABLE
+AS
+$$
+BEGIN
+  RETURN is_accounts_copied FROM reptracker_app_status LIMIT 1;
+END
+$$;
+
+CREATE OR REPLACE FUNCTION updateAccountsCopied(_is_accounts_copied BOOLEAN)
+RETURNS VOID
 LANGUAGE 'plpgsql'
 AS
 $$
 BEGIN
-  UPDATE app_status SET continue_processing = False;
+  UPDATE reptracker_app_status SET is_accounts_copied = _is_accounts_copied;
 END
 $$;
+
 
 CREATE OR REPLACE FUNCTION get_version()
 RETURNS TEXT
@@ -61,5 +82,50 @@ END IF;
 END
 $$;
 
+CREATE OR REPLACE FUNCTION prepare_account_reputations()
+RETURNS VOID
+LANGUAGE 'plpgsql' VOLATILE
+AS
+$$
+BEGIN
+  WITH select_account_reputations AS MATERIALIZED
+  (
+  SELECT ha.id AS ha_id, 0, true, ar.account_id as ar_id
+  FROM hive.accounts_view ha
+  LEFT JOIN account_reputations ar ON ar.account_id = ha.id
+  )
+  INSERT INTO account_reputations
+    (account_id, reputation, is_implicit)
+  SELECT sar.ha_id, 0, true
+  FROM select_account_reputations sar
+  WHERE sar.ar_id IS NULL;
+
+END
+$$;
+
+
+CREATE OR REPLACE FUNCTION reptracker_process_blocks(_context_name hive.context_name, _block_range hive.blocks_range, _logs BOOLEAN = true)
+RETURNS VOID
+LANGUAGE 'plpgsql' VOLATILE
+AS
+$$
+
+BEGIN
+  IF hive.get_current_stage_name(_context_name) = 'MASSIVE_PROCESSING' THEN
+    IF NOT isAccountsCopied() THEN
+      PERFORM prepare_account_reputations();
+      PERFORM updateAccountsCopied(true);
+    END IF;
+
+    CALL reptracker_massive_processing(_block_range.first_block, _block_range.last_block, _logs);
+  ELSE
+    IF isAccountsCopied() THEN
+      PERFORM updateAccountsCopied(false);
+    END IF;
+
+    CALL reptracker_single_processing(_block_range.first_block, _logs);
+  END IF;
+END
+$$;
 
 RESET ROLE;

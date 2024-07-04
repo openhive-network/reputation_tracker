@@ -7,7 +7,7 @@ if [ "$1" = "install_app" ]; then
   exec /app/scripts/install_app.sh --host="${POSTGRES_HOST:-haf}" "$@"
 elif [ "$1" = "process_blocks" ]; then
   shift
-  exec /app/scripts/process_blocks.sh --host="${POSTGRES_HOST:-haf}" 
+  exec /app/scripts/process_blocks.sh --host="${POSTGRES_HOST:-haf}" "$@"
 elif [ "$1" = "uninstall_app" ]; then
   shift
   exec /app/scripts/uninstall_app.sh --host="${POSTGRES_HOST:-haf}" --user="${POSTGRES_USER:-haf_admin}" "$@"

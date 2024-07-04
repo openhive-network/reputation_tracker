@@ -20,7 +20,7 @@ POSTGRES_USER=${POSTGRES_USER:-"reptracker_owner"}
 POSTGRES_HOST=${POSTGRES_HOST:-"localhost"}
 POSTGRES_PORT=${POSTGRES_PORT:-5432}
 POSTGRES_URL=${POSTGRES_URL:-""}
-MAX_BLOCK_LIMIT=${MAX_BLOCK_LIMIT:-0}
+PROCESS_BLOCK_LIMIT=${PROCESS_BLOCK_LIMIT:-null}
 REPTRACKER_SCHEMA=${REPTRACKER_SCHEMA:-"reptracker_app"}
 
 while [ $# -gt 0 ]; do
@@ -38,7 +38,7 @@ while [ $# -gt 0 ]; do
         POSTGRES_URL="${1#*=}"
         ;;
     --stop-at-block=*)
-        MAX_BLOCK_LIMIT="${1#*=}"
+        PROCESS_BLOCK_LIMIT="${1#*=}"
         ;;
     --schema=*)
         REPTRACKER_SCHEMA="${1#*=}"
@@ -66,8 +66,9 @@ done
 POSTGRES_ACCESS=${POSTGRES_URL:-"postgresql://$POSTGRES_USER@$POSTGRES_HOST:$POSTGRES_PORT/haf_block_log"}
 
 process_blocks() {
+    local n_blocks="${1:-null}"
     log_file="reptracker_sync.log"
-    psql "$POSTGRES_ACCESS" -v "ON_ERROR_STOP=on" -v REPTRACKER_SCHEMA="${REPTRACKER_SCHEMA}" -c "\timing" -c "SET SEARCH_PATH TO ${REPTRACKER_SCHEMA};" -c "CALL ${REPTRACKER_SCHEMA}.main('${REPTRACKER_SCHEMA}');" 2>&1 | tee -i $log_file
+    psql "$POSTGRES_ACCESS" -v "ON_ERROR_STOP=on" -v REPTRACKER_SCHEMA="${REPTRACKER_SCHEMA}" -c "\timing" -c "SET SEARCH_PATH TO ${REPTRACKER_SCHEMA};" -c "CALL ${REPTRACKER_SCHEMA}.main('${REPTRACKER_SCHEMA}', $n_blocks);" 2>&1 | tee -i $log_file
 }
 
 process_blocks "$PROCESS_BLOCK_LIMIT"
