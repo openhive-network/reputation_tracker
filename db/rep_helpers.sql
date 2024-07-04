@@ -109,7 +109,6 @@ RETURNS VOID
 LANGUAGE 'plpgsql' VOLATILE
 AS
 $$
-
 BEGIN
   IF hive.get_current_stage_name(_context_name) = 'MASSIVE_PROCESSING' THEN
     IF NOT isAccountsCopied() THEN
@@ -118,13 +117,14 @@ BEGIN
     END IF;
 
     CALL reptracker_massive_processing(_block_range.first_block, _block_range.last_block, _logs);
-  ELSE
-    IF isAccountsCopied() THEN
-      PERFORM updateAccountsCopied(false);
-    END IF;
-
-    CALL reptracker_single_processing(_block_range.first_block, _logs);
+    RETURN;
   END IF;
+
+  IF isAccountsCopied() THEN
+    PERFORM updateAccountsCopied(false);
+  END IF;
+
+  CALL reptracker_single_processing(_block_range.first_block, _logs);
 END
 $$;
 

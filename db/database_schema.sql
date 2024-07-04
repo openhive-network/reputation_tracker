@@ -31,15 +31,8 @@ BEGIN
 CREATE TABLE IF NOT EXISTS reptracker_app_status
 (
   continue_processing BOOLEAN NOT NULL,
-  last_processed_block INT NOT NULL,
   is_accounts_copied BOOLEAN
 );
-
-INSERT INTO reptracker_app_status
-(continue_processing, last_processed_block, is_accounts_copied)
-VALUES
-(True, 0, False)
-;
 
 CREATE TABLE IF NOT EXISTS version(
   schema_hash TEXT,
@@ -69,5 +62,10 @@ CREATE TYPE AccountReputation AS
 END
 $$;
 
+INSERT INTO reptracker_app_status
+(continue_processing, is_accounts_copied)
+VALUES
+(True, False)
+;
 
 RESET ROLE;
