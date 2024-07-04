@@ -88,6 +88,7 @@ BEGIN
 
     IF NOT continueProcessing() THEN
       ROLLBACK;
+      RAISE NOTICE 'Exiting application main loop at processed block: %.', hive.app_get_current_block_num(_appContext);
       RETURN;
     END IF;
 
@@ -99,8 +100,7 @@ BEGIN
     PERFORM reptracker_process_blocks(_appContext, _blocks_range);
   END LOOP;
 
-
-  RAISE NOTICE 'Exiting application main loop at processed block: %.', hive.app_get_current_block_num(_appContext);
+  ASSERT FALSE, 'Cannot reach this point';
 END
 $$;
 
