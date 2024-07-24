@@ -11,9 +11,9 @@ SET ROLE reptracker_owner;
       https://hive.blog/steemit/@digitalnotvir/how-reputation-scores-are-calculated-the-details-explained-with-simple-math
 
       SQL example
-      * `SELECT * FROM reptracker_endpoints.get_account_reputation('blocktrades');`
+      * `SELECT * FROM reptracker_endpoints.get_account_reputation(''blocktrades'');`
 
-      * `SELECT * FROM reptracker_endpoints.get_account_reputation('initminer');`
+      * `SELECT * FROM reptracker_endpoints.get_account_reputation(''initminer'');`
 
       REST call example
       * `GET https://{reptracker-host}/%1$s/reputation/blocktrades`
