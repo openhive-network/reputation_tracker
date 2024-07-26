@@ -124,7 +124,7 @@ BEGIN
     PERFORM updateAccountsCopied(false);
   END IF;
 
-  CALL reptracker_single_processing(_block_range.first_block, _logs);
+  CALL reptracker_single_processing(_block_range.first_block, _block_range.last_block, _logs);
 END
 $$;
 

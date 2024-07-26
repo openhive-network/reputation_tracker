@@ -28,7 +28,7 @@ END
 $$;
 
 CREATE OR REPLACE PROCEDURE reptracker_single_processing(
-    in _block INT, IN _logs BOOLEAN)
+    in _from INT, in _to INT, IN _logs BOOLEAN)
 LANGUAGE 'plpgsql'
 AS
 $$
@@ -39,16 +39,16 @@ BEGIN
   PERFORM set_config('synchronous_commit', 'ON', false);
 
   IF _logs THEN
-    RAISE NOTICE 'Reptracker processing block: %...', _block;
+    RAISE NOTICE 'Reptracker processing block: %...', _from;
     __start_ts := clock_timestamp();
   END IF;
 
-  PERFORM reptracker_block_range_data(_block, _block);
+  PERFORM reptracker_block_range_data(_from, _to);
   
   IF _logs THEN
     __end_ts := clock_timestamp();
     RAISE NOTICE 'Reptracker processed block % successfully in % s
-    ', _block, (extract(epoch FROM __end_ts - __start_ts));
+    ', _from, (extract(epoch FROM __end_ts - __start_ts));
   END IF;
 END
 $$;
