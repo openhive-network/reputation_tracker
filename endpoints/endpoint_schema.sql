@@ -24,8 +24,10 @@ servers:
 DO $__$
 DECLARE 
   __schema_name VARCHAR;
+  __swagger_url TEXT;
 BEGIN
   SHOW SEARCH_PATH INTO __schema_name;
+  __swagger_url := current_setting('custom.swagger_url')::TEXT;
 
 CREATE SCHEMA IF NOT EXISTS reptracker_endpoints AUTHORIZATION reptracker_owner;
 
@@ -68,7 +70,7 @@ declare
           "Account-reputation"
         ],
         "summary": "Account reputation",
-        "description": "Returns calculated reputation with formula found in:\nhttps://hive.blog/steemit/@digitalnotvir/how-reputation-scores-are-calculated-the-details-explained-with-simple-math\n\nSQL example\n* `SELECT * FROM reptracker_endpoints.get_account_reputation(''blocktrades'');`\n\n* `SELECT * FROM reptracker_endpoints.get_account_reputation(''initminer'');`\n\nREST call example\n* `GET https://{reptracker-host}/%1$s/reputation/blocktrades`\n\n* `GET https://{reptracker-host}/%1$s/reputation/initminer`\n",
+        "description": "Returns calculated reputation with formula found in:\nhttps://hive.blog/steemit/@digitalnotvir/how-reputation-scores-are-calculated-the-details-explained-with-simple-math\n\nSQL example\n* `SELECT * FROM reptracker_endpoints.get_account_reputation(''blocktrades'');`\n\nREST call example\n* `GET ''https://%2$s/%1$s/reputation/blocktrades''`\n",
         "operationId": "reptracker_endpoints.get_account_reputation",
         "parameters": [
           {
@@ -89,7 +91,7 @@ declare
                 "schema": {
                   "type": "integer"
                 },
-                "example": 35
+                "example": 69
               }
             }
           }
@@ -104,7 +106,7 @@ begin
   return openapi;
 end
 $_$ language plpgsql;'
-,__schema_name);
+,__schema_name, __swagger_url);
 
 END
 $__$;

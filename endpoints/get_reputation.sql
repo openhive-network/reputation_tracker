@@ -13,12 +13,8 @@ SET ROLE reptracker_owner;
       SQL example
       * `SELECT * FROM reptracker_endpoints.get_account_reputation(''blocktrades'');`
 
-      * `SELECT * FROM reptracker_endpoints.get_account_reputation(''initminer'');`
-
       REST call example
-      * `GET https://{reptracker-host}/%1$s/reputation/blocktrades`
-      
-      * `GET https://{reptracker-host}/%1$s/reputation/initminer`
+      * `GET ''https://%2$s/%1$s/reputation/blocktrades''`
     operationId: reptracker_endpoints.get_account_reputation
     parameters:
       - in: path
@@ -37,7 +33,7 @@ SET ROLE reptracker_owner;
           application/json:
             schema:
               type: integer
-            example: 35
+            example: 69
         description: No such account in the database
  */
 -- openapi-generated-code-begin

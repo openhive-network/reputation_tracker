@@ -16,6 +16,7 @@ print_help () {
     echo "  --host=VALUE              Allows to specify a PostgreSQL host location (defaults to /var/run/postgresql)"
     echo "  --port=NUMBER             Allows to specify a PostgreSQL operating port (defaults to 5432)"
     echo "  --postgres-url=URL        Allows to specify a PostgreSQL URL (in opposite to separate --host and --port options)"
+    echo "  --swagger-url=URL         Allows to specify a server URL"
     echo "  --is_forking=TRUE/FALSE   Allows to specify if app should be forking or not (defaults to true)"
     echo "  --help               Display this help screen and exit"
     echo
@@ -28,6 +29,8 @@ POSTGRES_PORT=${POSTGRES_PORT:-5432}
 POSTGRES_URL=${POSTGRES_URL:-""}
 REPTRACKER_SCHEMA=${REPTRACKER_SCHEMA:-"reptracker_app"}
 IS_FORKING=${IS_FORKING:-"true"}
+SWAGGER_URL=${SWAGGER_URL:-"{reptracker-host}"}
+
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -40,6 +43,9 @@ while [ $# -gt 0 ]; do
     --postgres-url=*)
         POSTGRES_URL="${1#*=}"
         ;;
+    --swagger-url=*)
+        SWAGGER_URL="${1#*=}"
+        ;;  
     --schema=*)
         REPTRACKER_SCHEMA="${1#*=}"
         ;;
@@ -81,7 +87,7 @@ psql "$POSTGRES_ACCESS" -v ON_ERROR_STOP=on -c "SET SEARCH_PATH TO ${REPTRACKER_
 psql "$POSTGRES_ACCESS" -v ON_ERROR_STOP=on -c "SET SEARCH_PATH TO ${REPTRACKER_SCHEMA};" -f "$SRCPATH/db/process_block_range.sql"
 psql "$POSTGRES_ACCESS" -v ON_ERROR_STOP=on -c "SET SEARCH_PATH TO ${REPTRACKER_SCHEMA};" -f "$SRCPATH/db/rep_helpers.sql"
 psql "$POSTGRES_ACCESS" -v ON_ERROR_STOP=on -c "SET SEARCH_PATH TO ${REPTRACKER_SCHEMA};" -f "$SRCPATH/db/main_loop.sql"
-psql "$POSTGRES_ACCESS" -v ON_ERROR_STOP=on -c "SET SEARCH_PATH TO ${REPTRACKER_SCHEMA};" -f "$SRCPATH/endpoints/endpoint_schema.sql"
+psql "$POSTGRES_ACCESS" -v ON_ERROR_STOP=on -c "SET custom.swagger_url = '$SWAGGER_URL'; SET SEARCH_PATH TO ${REPTRACKER_SCHEMA};" -f "$SRCPATH/endpoints/endpoint_schema.sql"
 psql "$POSTGRES_ACCESS" -v ON_ERROR_STOP=on -c "SET SEARCH_PATH TO ${REPTRACKER_SCHEMA};" -f "$SRCPATH/endpoints/get_reputation.sql"
 psql "$POSTGRES_ACCESS" -v ON_ERROR_STOP=on -c "SET SEARCH_PATH TO ${REPTRACKER_SCHEMA};" -f "$SRCPATH/account_dump/account_rep_stats.sql"
 psql "$POSTGRES_ACCESS" -v ON_ERROR_STOP=on -c "SET SEARCH_PATH TO ${REPTRACKER_SCHEMA};" -f "$SRCPATH/account_dump/compare_accounts.sql"
