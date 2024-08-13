@@ -5,3 +5,4 @@ uninstall_app.log
 account_dump_test.log
 set_version_in_sql.pgsql
 accounts_dump.json
+endpoints_openapi
