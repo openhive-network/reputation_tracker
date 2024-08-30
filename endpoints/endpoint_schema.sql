@@ -18,7 +18,7 @@ tags:
   - name: Account-reputation
     description: Current account reputation 
 servers:
-  - url: /%1$s
+  - url: /reputation-api
  */
 
 DO $__$
@@ -60,7 +60,7 @@ declare
   ],
   "servers": [
     {
-      "url": "/%1$s"
+      "url": "/reputation-api"
     }
   ],
   "paths": {
@@ -70,7 +70,7 @@ declare
           "Account-reputation"
         ],
         "summary": "Account reputation",
-        "description": "Returns calculated reputation with formula found in:\nhttps://hive.blog/steemit/@digitalnotvir/how-reputation-scores-are-calculated-the-details-explained-with-simple-math\n\nSQL example\n* `SELECT * FROM reptracker_endpoints.get_account_reputation(''blocktrades'');`\n\nREST call example\n* `GET ''https://%2$s/%1$s/reputation/blocktrades''`\n",
+        "description": "Returns calculated reputation with formula found in:\nhttps://hive.blog/steemit/@digitalnotvir/how-reputation-scores-are-calculated-the-details-explained-with-simple-math\n\nSQL example\n* `SELECT * FROM reptracker_endpoints.get_account_reputation(''blocktrades'');`\n\nREST call example\n* `GET ''https://%1$s/reputation-api/reputation/blocktrades''`\n",
         "operationId": "reptracker_endpoints.get_account_reputation",
         "parameters": [
           {
@@ -106,7 +106,7 @@ begin
   return openapi;
 end
 $_$ language plpgsql;'
-,__schema_name, __swagger_url);
+, __swagger_url);
 
 END
 $__$;

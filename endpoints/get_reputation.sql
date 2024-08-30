@@ -14,7 +14,7 @@ SET ROLE reptracker_owner;
       * `SELECT * FROM reptracker_endpoints.get_account_reputation(''blocktrades'');`
 
       REST call example
-      * `GET ''https://%2$s/%1$s/reputation/blocktrades''`
+      * `GET ''https://%1$s/reputation-api/reputation/blocktrades''`
     operationId: reptracker_endpoints.get_account_reputation
     parameters:
       - in: path
