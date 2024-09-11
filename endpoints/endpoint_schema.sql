@@ -15,8 +15,8 @@ externalDocs:
   description: Reputation tracker gitlab repository
   url: https://gitlab.syncad.com/hive/reputation_tracker
 tags:
-  - name: Account-reputation
-    description: Current account reputation 
+  - name: Accounts
+    description: Informations about account reputation
 servers:
   - url: /reputation-api
  */
@@ -54,8 +54,8 @@ declare
   },
   "tags": [
     {
-      "name": "Account-reputation",
-      "description": "Current account reputation"
+      "name": "Accounts",
+      "description": "Informations about account reputation"
     }
   ],
   "servers": [
@@ -64,13 +64,13 @@ declare
     }
   ],
   "paths": {
-    "/reputation/{account-name}": {
+    "/accounts/{account-name}/reputation": {
       "get": {
         "tags": [
-          "Account-reputation"
+          "Accounts"
         ],
         "summary": "Account reputation",
-        "description": "Returns calculated reputation with formula found in:\nhttps://hive.blog/steemit/@digitalnotvir/how-reputation-scores-are-calculated-the-details-explained-with-simple-math\n\nSQL example\n* `SELECT * FROM reptracker_endpoints.get_account_reputation(''blocktrades'');`\n\nREST call example\n* `GET ''https://%1$s/reputation-api/reputation/blocktrades''`\n",
+        "description": "Returns calculated reputation with formula found in:\nhttps://hive.blog/steemit/@digitalnotvir/how-reputation-scores-are-calculated-the-details-explained-with-simple-math\n\nSQL example\n* `SELECT * FROM reptracker_endpoints.get_account_reputation(''blocktrades'');`\n\nREST call example\n* `GET ''https://%1$s/reputation-api/accounts/blocktrades/reputation''`\n",
         "operationId": "reptracker_endpoints.get_account_reputation",
         "parameters": [
           {

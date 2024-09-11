@@ -1,10 +1,10 @@
 SET ROLE reptracker_owner;
 
 /** openapi:paths
-/reputation/{account-name}:
+/accounts/{account-name}/reputation:
   get:
     tags:
-      - Account-reputation
+      - Accounts
     summary: Account reputation
     description: |
       Returns calculated reputation with formula found in:
@@ -14,7 +14,7 @@ SET ROLE reptracker_owner;
       * `SELECT * FROM reptracker_endpoints.get_account_reputation(''blocktrades'');`
 
       REST call example
-      * `GET ''https://%1$s/reputation-api/reputation/blocktrades''`
+      * `GET ''https://%1$s/reputation-api/accounts/blocktrades/reputation''`
     operationId: reptracker_endpoints.get_account_reputation
     parameters:
       - in: path
