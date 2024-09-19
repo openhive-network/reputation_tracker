@@ -24,7 +24,6 @@ BEGIN
     _name =>__schema_name,
     _schema => __schema_name,
     _is_forking => v_is_forking,
-    _is_attached => FALSE,
     _stages => synchronization_stages
   );
 
