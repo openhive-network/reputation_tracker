@@ -53,6 +53,32 @@ BEGIN
 END
 $$;
 
+CREATE OR REPLACE FUNCTION continueProcessingLoop(
+    _appContext hive.context_name,
+    _maxBlockLimit INT,
+    _blocks_range hive.blocks_range
+)
+RETURNS BOOLEAN
+LANGUAGE 'plpgsql'
+AS
+$$
+BEGIN
+    IF _blocks_range IS NULL AND _maxBlockLimit IS NOT NULL THEN
+        IF hive.app_get_current_block_num(_appContext) >= _maxBlockLimit THEN
+            RAISE NOTICE 'Blocks limit reached. Exiting application main loop at processed block: %.', hive.app_get_current_block_num(_appContext);
+            RETURN FALSE;
+        END IF;
+    END IF;
+
+    IF NOT continueProcessing() THEN
+        RAISE NOTICE 'Exiting application main loop at processed block: %.', hive.app_get_current_block_num(_appContext);
+        RETURN FALSE;
+    END IF;
+
+    RETURN TRUE;
+END
+$$;
+
 /** Application entry point, which:
   - defines its data schema,
   - creates HAF application context,
@@ -86,18 +112,9 @@ BEGIN
       _override_max_batch => NULL, 
       _limit => _maxBlockLimit);
 
-    IF _blocks_range IS NULL AND _maxBlockLimit IS NOT NULL THEN
-        IF hive.app_get_current_block_num(_appContext) >= _maxBlockLimit THEN
-            ROLLBACK;
-            RAISE NOTICE 'Exiting application main loop at processed block: %.', hive.app_get_current_block_num(_appContext);
-            RETURN;
-        END IF;
-    END IF;
-
-    IF NOT continueProcessing() THEN
-      ROLLBACK;
-      RAISE NOTICE 'Exiting application main loop at processed block: %.', hive.app_get_current_block_num(_appContext);
-      RETURN;
+    IF NOT continueProcessingLoop( _appContext, _maxBlockLimit, _blocks_range ) THEN
+        ROLLBACK;
+        RETURN;
     END IF;
 
     IF _blocks_range IS NULL THEN
