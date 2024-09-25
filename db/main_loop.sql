@@ -86,6 +86,14 @@ BEGIN
       _override_max_batch => NULL, 
       _limit => _maxBlockLimit);
 
+    IF _blocks_range IS NULL AND _maxBlockLimit IS NOT NULL THEN
+        IF hive.app_get_current_block_num(_appContext) >= _maxBlockLimit THEN
+            ROLLBACK;
+            RAISE NOTICE 'Exiting application main loop at processed block: %.', hive.app_get_current_block_num(_appContext);
+            RETURN;
+        END IF;
+    END IF;
+
     IF NOT continueProcessing() THEN
       ROLLBACK;
       RAISE NOTICE 'Exiting application main loop at processed block: %.', hive.app_get_current_block_num(_appContext);
