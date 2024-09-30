@@ -39,6 +39,8 @@ include:
       - '/templates/npm_projects.gitlab-ci.yml'
 
 .lint_job:
+  extends: 
+    - .job-defaults
   stage: lint
   variables:
     GIT_SUBMODULE_STRATEGY: none
@@ -48,8 +50,20 @@ include:
   tags:
     - public-runner-docker
 
+# All jobs other than those necessary to build Reputation Tracker Docker imagess need to extend this
+# template or include the following rules (if they need additional restrictions)
+.rules:
+  rules:
+    - if: $CI_PIPELINE_TRIGGERED
+      when: never
+    - if: $CI_PIPELINE_SOURCE == "pipeline"
+      when: never
+    - when: on_success
+
 lint_bash_scripts:
-  extends: .lint_job
+  extends: 
+    - .lint_job
+    - .rules
   image: koalaman/shellcheck-alpine:latest
   before_script:
     - apk add xmlstarlet
@@ -65,7 +79,9 @@ lint_bash_scripts:
       junit: shellcheck-junit-result.xml
 
 lint_sql_scripts:
-  extends: .lint_job
+  extends: 
+    - .lint_job
+    - .rules
   image: 
     name: sqlfluff/sqlfluff:2.1.4
     entrypoint: [""]
@@ -77,7 +93,9 @@ lint_sql_scripts:
 
 prepare_haf_image:
   stage: build
-  extends: .prepare_haf_image
+  extends: 
+    - .prepare_haf_image
+    - .rules
   variables:
     SUBMODULE_DIR: "$CI_PROJECT_DIR/haf"
     REGISTRY_USER: "$HAF_DEPLOY_USERNAME"
@@ -89,7 +107,9 @@ prepare_haf_image:
     - hived-for-tests
 
 extract-swagger-json:
-  extends: .filter_out_swagger_json
+  extends: 
+    - .filter_out_swagger_json
+    - .rules
   stage: build
   variables:
     INPUT_SQL_SWAGGER_FILE: "${CI_PROJECT_DIR}/endpoints/endpoint_schema.sql"
@@ -97,7 +117,9 @@ extract-swagger-json:
     - public-runner-docker
 
 generate-wax-spec:
-  extends: .generate_swagger_package
+  extends: 
+    - .generate_swagger_package
+    - .rules
   stage: build
   variables:
     INPUT_JSON_SWAGGER_FILE: "${BUILT_JSON_SWAGGER_FILE}"
@@ -111,7 +133,9 @@ generate-wax-spec:
     - public-runner-docker
 
 prepare_haf_data:
-  extends: .prepare_haf_data_5m
+  extends: 
+    - .prepare_haf_data_5m
+    - .rules
   needs:
     - job: prepare_haf_image
       artifacts: true
@@ -166,7 +190,9 @@ prepare_haf_data:
     - hived-for-tests
 
 docker-ci-runner-build:
-  extends: .docker-build-template
+  extends: 
+    - .docker-build-template
+    - .rules
   variables:
     BASE_REPO_NAME: ""
     BASE_TAG: "docker-24.0.1-2"
@@ -184,7 +210,9 @@ docker-setup-docker-image-build:
     TARGET: "full-ci"
 
 sync:
-  extends: .docker_image_builder_job_template
+  extends: 
+    - .docker_image_builder_job_template
+    - .rules
   stage: sync
   image: registry.gitlab.syncad.com/hive/reputation_tracker/ci-runner:docker-24.0.1-2
   needs:
@@ -300,6 +328,9 @@ sync:
     HEALTHCHECK_TCP_PORT: 3000
 
 regression-test:
+  extends: 
+    - .job-defaults
+    - .rules 
   image: registry.gitlab.syncad.com/hive/reputation_tracker/ci-runner:docker-24.0.1-2
   stage: test
   needs:
@@ -329,6 +360,9 @@ regression-test:
     - data-cache-storage
 
 setup-scripts-test:
+  extends: 
+    - .job-defaults
+    - .rules 
   image: registry.gitlab.syncad.com/hive/reputation_tracker/ci-runner:docker-24.0.1-2
   stage: test
   needs:
@@ -354,6 +388,9 @@ setup-scripts-test:
     - data-cache-storage
 
 performance-test:
+  extends: 
+    - .job-defaults
+    - .rules
   image: registry.gitlab.syncad.com/hive/reputation_tracker/ci-runner:docker-24.0.1-2
   stage: test
   needs:
@@ -396,12 +433,23 @@ build_and_publish_image:
     - !reference [.publish_docker_image_template, before_script]
   script:
     - scripts/ci-helpers/build_and_publish_instance.sh
+  rules:
+    - if: "$CI_PIPELINE_TRIGGERED"
+      when: never
+    - if: $CI_PIPELINE_SOURCE == "pipeline"
+      when: never
+    - if: $CI_COMMIT_TAG && $CI_COMMIT_REF_PROTECTED == "true"
+      when: on_success
+  #  - !reference [.rules, rules]
+  #  - !reference [.publish_docker_image_template, rules]  
   tags:
     - public-runner-docker
     - hived-for-tests
 
 deploy-wax-spec-dev-package:
-  extends: .npm_deploy_package_template
+  extends: 
+    - .npm_deploy_package_template
+    - .rules
   stage: publish
   variables:
     SOURCE_DIR: "${PACKAGE_SOURCE_DIR}"
@@ -424,6 +472,14 @@ deploy-wax-spec-production-public-npm:
   needs:
     - job: generate-wax-spec
       artifacts: true
+  rules:
+    - if: $CI_PIPELINE_TRIGGERED
+      when: never
+    - if: $CI_PIPELINE_SOURCE == "pipeline"
+      when: never 
+    - if: '$CI_COMMIT_TAG && $CI_COMMIT_REF_PROTECTED == "true"'
+      when: manual
+      allow_failure: true    
   tags:
     - public-runner-docker
 
@@ -432,5 +488,12 @@ cleanup_haf_cache_manual:
   stage: cleanup
   variables:
     CLEANUP_PATH_PATTERN: "${DATA_CACHE_HAF_PREFIX}_*"
+  rules:
+    - if: $CI_PIPELINE_TRIGGERED
+      when: never
+    - if: $CI_PIPELINE_SOURCE == "pipeline"
+      when: never
+    - when: manual
+      allow_failure: true
   tags:
     - data-cache-storage
