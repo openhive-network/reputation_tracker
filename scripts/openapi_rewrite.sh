@@ -15,7 +15,8 @@ temp_output_file=$(mktemp)
 OUTPUT="$SCRIPTDIR/output"
 ENDPOINTS_IN_ORDER="
 ../$endpoints/endpoint_schema.sql
-../$endpoints/get_reputation.sql"
+../$endpoints/get_reputation.sql
+../$endpoints/get_rep_last_synced_block.sql"
 
 # Function to reverse the lines
 reverse_lines() {

@@ -105,6 +105,7 @@ psql "$POSTGRES_ACCESS" -v ON_ERROR_STOP=on -c "SET SEARCH_PATH TO ${REPTRACKER_
 psql "$POSTGRES_ACCESS" -v ON_ERROR_STOP=on -c "SET SEARCH_PATH TO ${REPTRACKER_SCHEMA};" -f "$SRCPATH/db/main_loop.sql"
 psql "$POSTGRES_ACCESS" -v ON_ERROR_STOP=on -c "SET custom.swagger_url = '$SWAGGER_URL'; SET SEARCH_PATH TO ${REPTRACKER_SCHEMA};" -f "$SRCPATH/endpoints/endpoint_schema.sql"
 psql "$POSTGRES_ACCESS" -v ON_ERROR_STOP=on -c "SET SEARCH_PATH TO ${REPTRACKER_SCHEMA};" -f "$SRCPATH/endpoints/get_reputation.sql"
+psql "$POSTGRES_ACCESS" -v ON_ERROR_STOP=on -c "SET SEARCH_PATH TO ${REPTRACKER_SCHEMA};" -f "$SRCPATH/endpoints/get_rep_last_synced_block.sql"
 psql "$POSTGRES_ACCESS" -v ON_ERROR_STOP=on -c "SET SEARCH_PATH TO ${REPTRACKER_SCHEMA};" -f "$SRCPATH/account_dump/account_rep_stats.sql"
 psql "$POSTGRES_ACCESS" -v ON_ERROR_STOP=on -c "SET SEARCH_PATH TO ${REPTRACKER_SCHEMA};" -f "$SRCPATH/account_dump/compare_accounts.sql"
 #psql "$POSTGRES_ACCESS" -v ON_ERROR_STOP=on -c "SET SEARCH_PATH TO ${REPTRACKER_SCHEMA};" -f "$SRCPATH/scripts/set_version_in_sql.pgsql"
