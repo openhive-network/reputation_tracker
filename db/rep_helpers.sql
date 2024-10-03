@@ -128,4 +128,27 @@ BEGIN
 END
 $$;
 
+CREATE OR REPLACE FUNCTION do_rep_indexes_exist()
+RETURNS BOOLEAN
+LANGUAGE 'plpgsql' VOLATILE
+AS
+$$
+DECLARE __result BOOLEAN;
+BEGIN
+  select not exists(select 1
+                    from (values (
+                    'stable_id_block_num_effective_vote_idx',
+                    'effective_comment_vote_idx',
+                    'delete_comment_op_idx'
+                    ))
+                         desired_indexes(indexname)
+                    left join pg_indexes using (indexname)
+                    left join pg_class on desired_indexes.indexname = pg_class.relname
+                    left join pg_index on pg_class.oid = indexrelid
+                    where pg_indexes.indexname is null or not pg_index.indisvalid)
+  into __result;
+  return __result;
+END
+$$;
+
 RESET ROLE;
