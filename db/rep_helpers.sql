@@ -137,7 +137,6 @@ DECLARE __result BOOLEAN;
 BEGIN
   select not exists(select 1
                     from (values (
-                    'stable_id_block_num_effective_vote_idx',
                     'effective_comment_vote_idx',
                     'delete_comment_op_idx'
                     ))
