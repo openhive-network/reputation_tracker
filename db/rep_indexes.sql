@@ -21,7 +21,7 @@ DO $$
   BEGIN
     IF EXISTS(SELECT 1 FROM pg_index WHERE NOT indisvalid AND indexrelid = (SELECT oid FROM pg_class WHERE relname = 'effective_comment_vote_idx')) THEN
       RAISE NOTICE 'Dropping invalid index effective_comment_vote_idx, it will be recreated';
-      DROP INDEX effective_comment_vote_idx;
+      DROP INDEX hive.effective_comment_vote_idx;
     END IF;
   END
 $$;
@@ -39,7 +39,7 @@ DO $$
   BEGIN
     IF EXISTS(SELECT 1 FROM pg_index WHERE NOT indisvalid AND indexrelid = (SELECT oid FROM pg_class WHERE relname = 'delete_comment_op_idx')) THEN
       RAISE NOTICE 'Dropping invalid index delete_comment_op_idx, it will be recreated';
-      DROP INDEX delete_comment_op_idx;
+      DROP INDEX hive.delete_comment_op_idx;
     END IF;
   END
 $$;
