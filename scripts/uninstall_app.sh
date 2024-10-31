@@ -88,8 +88,6 @@ BEGIN
     DROP ROLE reptracker_owner;
     DROP OWNED BY reptracker_user CASCADE;
     DROP ROLE reptracker_user;
-    DROP OWNED BY reputation_tracker_writer_group CASCADE;
-    DROP ROLE reputation_tracker_writer_group;
  END IF;
 END\$\$;
 EOF
