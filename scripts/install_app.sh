@@ -85,7 +85,7 @@ create_haf_indexes() {
     # There's an un-solved bug that happens any time and app like hafbe adds/drops indexes at the same time
     # HAF is entering/leaving massive sync.  We need to prevent this, probably by having hafbe set a flag
     # that prevents haf from re-entering massive sync during the time hafbe is creating indexes
-    psql "$POSTGRES_ACCESS" -v ON_ERROR_STOP=on -c "SET SEARCH_PATH TO ${REPTRACKER_SCHEMA};"  -c "\timing" -f "$SRCPATH/db/rep_indexes.sql"
+    psql "$POSTGRES_ACCESS" -v ON_ERROR_STOP=on -c "\timing" -f "$SRCPATH/db/rep_indexes.sql"
   else
     echo "HAF indexes already exist, skipping creation"
   fi

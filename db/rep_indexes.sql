@@ -26,14 +26,14 @@ DO $$
   END
 $$;
 
-CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS effective_comment_vote_idx ON hive.operations USING btree 
+CREATE INDEX CONCURRENTLY IF NOT EXISTS effective_comment_vote_idx ON hive.operations USING btree 
 (
     (body_binary::jsonb -> 'value' ->> 'author'),
     (body_binary::jsonb -> 'value' ->> 'voter'),
     (body_binary::jsonb -> 'value' ->> 'permlink'),
     id desc 
 )
-WHERE hive.operation_id_to_type_id(id) = 72;;
+WHERE hive.operation_id_to_type_id(id) = 72;
 
 DO $$
   BEGIN
@@ -44,7 +44,7 @@ DO $$
   END
 $$;
 
-CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS delete_comment_op_idx ON hive.operations USING btree 
+CREATE INDEX CONCURRENTLY IF NOT EXISTS delete_comment_op_idx ON hive.operations USING btree 
 (
     (body_binary::jsonb -> 'value' ->> 'author'),
     (body_binary::jsonb -> 'value' ->> 'permlink'),
