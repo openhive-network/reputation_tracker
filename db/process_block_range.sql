@@ -1,7 +1,6 @@
 SET ROLE reptracker_owner;
 
 --- Massive version of account reputation calculation.
-DROP FUNCTION IF EXISTS reptracker_block_range_data;
 CREATE OR REPLACE FUNCTION reptracker_block_range_data(
     IN _first_block_num INT,
     IN _last_block_num INT
@@ -85,7 +84,6 @@ SELECT COUNT(*) FROM balance_change INTO _result;
 END
 $BODY$;
 
-DROP FUNCTION IF EXISTS calculate_account_reputations;
 CREATE OR REPLACE FUNCTION calculate_account_reputations(
     _id BIGINT,
     _block_num INT,

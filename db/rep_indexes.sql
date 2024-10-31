@@ -33,7 +33,7 @@ CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS effective_comment_vote_idx ON hiv
     (body_binary::jsonb -> 'value' ->> 'permlink'),
     id desc 
 )
-WHERE hive.operation_id_to_type_id(id) = 72;;
+WHERE hive.operation_id_to_type_id(id) = 72;
 
 DO $$
   BEGIN
