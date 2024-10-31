@@ -55,7 +55,7 @@ else
     TARGET="full"
 fi
 
-scripts/build_docker_image.sh "$SRCROOTDIR" --registry="$REGISTRY" --target="$TARGET" --tag="$BUILD_IMAGE_TAG"
+scripts/ci-helpers/build_docker_image.sh "$SRCROOTDIR" --registry="$REGISTRY" --target="$TARGET" --tag="$BUILD_IMAGE_TAG"
 
 # On CI pull the image form the registry since it's pushed directly to the registry after build
 if [[ -n ${CI:-} ]]; then
