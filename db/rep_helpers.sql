@@ -82,6 +82,17 @@ END IF;
 END
 $$;
 
+
+CREATE OR REPLACE FUNCTION generate_lock_key(_index_name TEXT)
+RETURNS BIGINT
+LANGUAGE 'plpgsql' IMMUTABLE
+AS
+$$
+BEGIN
+    RETURN ('x' || substring(md5(_index_name), 1, 16))::BIT(64)::BIGINT % 2147483647;
+END
+$$;
+
 CREATE OR REPLACE FUNCTION prepare_account_reputations()
 RETURNS VOID
 LANGUAGE 'plpgsql' VOLATILE
