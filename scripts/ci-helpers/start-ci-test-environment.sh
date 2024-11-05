@@ -72,7 +72,7 @@ cat <<-EOF | tee ci.env
     HIVED_UID=${HIVED_UID:-$(id -u)}
     PGHERO_USERNAME=link
     PGHERO_PASSWORD=hyrule
-    PGADMIN_DEFAULT_EMAIL=admin@hafblockexplorer.internal
+    PGADMIN_DEFAULT_EMAIL=admin@reptracker.internal
     PGADMIN_DEFAULT_PASSWORD=admin
 EOF
 
