@@ -83,7 +83,7 @@ EOF
 do
 \$\$
 BEGIN
- IF NOT EXISTS( SELECT 1 FROM hive.contexts hc WHERE owner = 'reptracker_owner' ) THEN
+ IF NOT EXISTS( SELECT 1 FROM hafd.contexts hc WHERE owner = 'reptracker_owner' ) THEN
     DROP OWNED BY reptracker_owner CASCADE;
     DROP ROLE reptracker_owner;
     DROP OWNED BY reptracker_user CASCADE;
@@ -93,20 +93,19 @@ END\$\$;
 EOF
 )
 
-    psql "$POSTGRES_ACCESS" -v "ON_ERROR_STOP=OFF" -c "${remove_context_sql}"
-    psql "$POSTGRES_ACCESS" -v "ON_ERROR_STOP=OFF" -c "DROP SCHEMA IF EXISTS ${REPTRACKER_SCHEMA} CASCADE;"
+  psql "$POSTGRES_ACCESS" -v "ON_ERROR_STOP=OFF" -c "${remove_context_sql}"
+  psql "$POSTGRES_ACCESS" -v "ON_ERROR_STOP=OFF" -c "DROP SCHEMA IF EXISTS ${REPTRACKER_SCHEMA} CASCADE;"
 
-    psql "$POSTGRES_ACCESS" -c "${drop_users_sql}" || true
+  psql "$POSTGRES_ACCESS" -c "${drop_users_sql}" || true
 
-    if [ "${DROP_INDEXES}" -eq 1 ]; then
+  if [ "${DROP_INDEXES}" -eq 1 ]; then
     echo "Attempting to drop indexes built by application"
 
-    psql -aw "$POSTGRES_ACCESS" -v ON_ERROR_STOP=on -c 'DROP INDEX IF EXISTS hive.effective_comment_vote_idx;'
-    psql -aw "$POSTGRES_ACCESS" -v ON_ERROR_STOP=on -c 'DROP INDEX IF EXISTS hive.delete_comment_op_idx;'
-    psql -aw "$POSTGRES_ACCESS" -v ON_ERROR_STOP=on -c 'DROP INDEX IF EXISTS hive.stable_id_block_num_effective_vote_idx;'
-    else
-      echo "Indexes created by application have been preserved"
-    fi
+    psql -aw "$POSTGRES_ACCESS" -v ON_ERROR_STOP=on -c 'DROP INDEX IF EXISTS hafd.effective_comment_vote_idx;'
+    psql -aw "$POSTGRES_ACCESS" -v ON_ERROR_STOP=on -c 'DROP INDEX IF EXISTS hafd.delete_comment_op_idx;'
+  else
+    echo "Indexes created by application have been preserved"
+  fi
 }
 
 uninstall_app

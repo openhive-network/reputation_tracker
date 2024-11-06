@@ -21,12 +21,12 @@ DO $$
   BEGIN
     IF EXISTS(SELECT 1 FROM pg_index WHERE NOT indisvalid AND indexrelid = (SELECT oid FROM pg_class WHERE relname = 'effective_comment_vote_idx')) THEN
       RAISE NOTICE 'Dropping invalid index effective_comment_vote_idx, it will be recreated';
-      DROP INDEX hive.effective_comment_vote_idx;
+      DROP INDEX hafd.effective_comment_vote_idx;
     END IF;
   END
 $$;
 
-CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS effective_comment_vote_idx ON hive.operations USING btree 
+CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS effective_comment_vote_idx ON hafd.operations USING btree
 (
     (body_binary::jsonb -> 'value' ->> 'author'),
     (body_binary::jsonb -> 'value' ->> 'voter'),
@@ -39,12 +39,12 @@ DO $$
   BEGIN
     IF EXISTS(SELECT 1 FROM pg_index WHERE NOT indisvalid AND indexrelid = (SELECT oid FROM pg_class WHERE relname = 'delete_comment_op_idx')) THEN
       RAISE NOTICE 'Dropping invalid index delete_comment_op_idx, it will be recreated';
-      DROP INDEX hive.delete_comment_op_idx;
+      DROP INDEX hafd.delete_comment_op_idx;
     END IF;
   END
 $$;
 
-CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS delete_comment_op_idx ON hive.operations USING btree 
+CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS delete_comment_op_idx ON hafd.operations USING btree
 (
     (body_binary::jsonb -> 'value' ->> 'author'),
     (body_binary::jsonb -> 'value' ->> 'permlink'),
@@ -52,5 +52,4 @@ CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS delete_comment_op_idx ON hive.ope
 )
 WHERE hive.operation_id_to_type_id(id) in (17, 61);
 
--- When you create expression indexes, you need to call ANALYZE to force postgresql to generate statistics on those expressions
-ANALYZE VERBOSE hive.operations;
+ANALYZE hafd.operations;

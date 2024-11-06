@@ -40,7 +40,7 @@ $$
 BEGIN
 
   PERFORM set_config('response.headers', '[{"Cache-Control": "public, max-age=2"}]', true);
-  RETURN current_block_num FROM hive.contexts WHERE name = 'reptracker_app';
+  RETURN hive.app_get_current_block_num( 'reptracker_app' );
 END
 $$;
 
