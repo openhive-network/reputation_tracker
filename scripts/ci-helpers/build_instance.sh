@@ -1,6 +1,6 @@
 #! /bin/bash
 
-set -e
+set -xeuo
 
 print_help () {
 cat <<-EOF
@@ -14,6 +14,16 @@ EOF
 }
 
 PROGRESS_DISPLAY=${PROGRESS_DISPLAY:-"auto"}
+BUILD_IMAGE_TAG=""
+REGISTRY=""
+SRCROOTDIR=""
+
+
+if [[ -n ${CI:-} ]]; then
+    echo "CI detected: $CI"
+else
+    echo "Non CI environment"
+fi
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -50,15 +60,7 @@ _TST_IMGTAG=${BUILD_IMAGE_TAG:?"Missing argument #1 - image tag to be built"}
 _TST_SRCDIR=${SRCROOTDIR:?"Missing arg #2 - source directory"}
 _TST_REGISTRY=${REGISTRY:?"Missing arg #3 - container registry URL"}
 
-# On CI build the image using the registry-stored BuildKit cache 
-# and push it to registry immediately.
-# Locally, build it using local BuildKit cache and load it to the 
-# local image store.
-if [[ -n ${CI:-} ]]; then
-    TARGET="full-ci"
-else
-    TARGET="full"
-fi
+TARGET="full-ci"
 
 export TAG=$BUILD_IMAGE_TAG
 
@@ -108,10 +110,9 @@ docker buildx bake --provenance=false --progress="$PROGRESS_DISPLAY" "$TARGET"
 
 popd
 
-# On CI pull the image form the registry since it's pushed directly to the registry after build
-if [[ -n ${CI:-} ]]; then
-  docker pull "$REGISTRY:$BUILD_IMAGE_TAG"
-fi
+# pull the image form the registry since it's pushed directly to the registry after build
+docker pull "$REGISTRY:$BUILD_IMAGE_TAG"
 
+# to be removed soon
 docker tag "$REGISTRY:$BUILD_IMAGE_TAG" "$REGISTRY/instance:$BUILD_IMAGE_TAG"
 docker tag "$REGISTRY:$BUILD_IMAGE_TAG" "$REGISTRY/minimal-instance:$BUILD_IMAGE_TAG"
