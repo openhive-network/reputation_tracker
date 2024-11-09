@@ -29,7 +29,7 @@ while [ $# -gt 0 ]; do
     --tag=*)
         arg="${1#*=}"
         BASE_TAG="$arg"
-        ;;    
+        ;;
     --progress=*)
         arg="${1#*=}"
         PROGRESS_DISPLAY="$arg"
@@ -89,7 +89,7 @@ export GIT_COMMIT_SHA
 
 GIT_CURRENT_BRANCH="$(git branch --show-current || true)"
 if [ -z "$GIT_CURRENT_BRANCH" ]; then
-  GIT_CURRENT_BRANCH="$(git describe --abbrev=0 --all | sed 's/^.*\///' || true)"
+  GIT_CURRENT_BRANCH="$(git describe --abbrev=0 --all --exclude 'pipelines/*' | sed 's/^.*\///' || true)"
   if [ -z "$GIT_CURRENT_BRANCH" ]; then
     GIT_CURRENT_BRANCH="[unknown]"
   fi
@@ -115,5 +115,26 @@ fi
 export GIT_LAST_COMMIT_DATE
 
 docker buildx bake --provenance=false --progress="$PROGRESS_DISPLAY" "$TARGET"
+
+REWRITER_TARGET=without_tag
+if [ -n "$BASE_TAG" ]; then
+  REWRITER_TARGET=with_tag
+  TAG_BUILD_ARGS="--build-arg GIT_COMMIT_TAG=$BASE_TAG"
+fi
+
+# shellcheck disable=SC2086
+docker buildx build \
+    --build-arg BUILD_TIME="$BUILD_TIME" \
+    --build-arg GIT_COMMIT_SHA="$GIT_COMMIT_SHA" \
+    --build-arg GIT_CURRENT_BRANCH="$GIT_CURRENT_BRANCH" \
+    --build-arg GIT_LAST_LOG_MESSAGE="$GIT_LAST_LOG_MESSAGE" \
+    --build-arg GIT_LAST_COMMITTER="$GIT_LAST_COMMITTER" \
+    --build-arg GIT_LAST_COMMIT_DATE="$GIT_LAST_COMMIT_DATE" \
+    --target=$REWRITER_TARGET \
+    $TAG_BUILD_ARGS \
+    --tag "$CI_REGISTRY_IMAGE/postgrest-rewriter:$BASE_TAG" \
+    --load \
+    --file Dockerfile.rewriter .
+docker push "$CI_REGISTRY_IMAGE/postgrest-rewriter:$BASE_TAG"
 
 popd

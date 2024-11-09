@@ -45,9 +45,9 @@ _TST_REGISTRY=${REGISTRY:?"Missing arg #3 - container registry URL"}
 
 pushd "$SRCROOTDIR"
 
-# On CI build the image using the registry-stored BuildKit cache 
+# On CI build the image using the registry-stored BuildKit cache
 # and push it to registry immediately.
-# Locally, build it using local BuildKit cache and load it to the 
+# Locally, build it using local BuildKit cache and load it to the
 # local image store.
 if [[ -n ${CI:-} ]]; then
     TARGET="full-ci"
