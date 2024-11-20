@@ -65,7 +65,7 @@ while [ $# -gt 0 ]; do
     shift
 done
 
-POSTGRES_ACCESS=${POSTGRES_URL:-"postgresql://$POSTGRES_USER@$POSTGRES_HOST:$POSTGRES_PORT/haf_block_log"}
+POSTGRES_ACCESS=${POSTGRES_URL:-"postgresql://$POSTGRES_USER@$POSTGRES_HOST:$POSTGRES_PORT/haf_block_log?application_name=reptracker_uninstall"}
 
 uninstall_app() {
     remove_context_sql=$(cat << EOF

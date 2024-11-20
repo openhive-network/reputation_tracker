@@ -34,6 +34,7 @@ IS_FORKING=${IS_FORKING:-"true"}
 SWAGGER_URL=${SWAGGER_URL:-"{reptracker-host}"}
 CREATE_SCHEMA=1
 CREATE_INDEXES=1
+POSTGRES_APP_NAME=reptracker_install
 
 
 while [ $# -gt 0 ]; do
@@ -58,9 +59,11 @@ while [ $# -gt 0 ]; do
         ;;
     --indexes-only)
         CREATE_SCHEMA=0
+        POSTGRES_APP_NAME=reptracker_install_indexes
         ;;
     --schema-only)
         CREATE_INDEXES=0
+        POSTGRES_APP_NAME=reptracker_install_schema
         ;;
     --help)
         print_help
@@ -82,7 +85,7 @@ while [ $# -gt 0 ]; do
     shift
 done
 
-POSTGRES_ACCESS=${POSTGRES_URL:-"postgresql://$POSTGRES_USER@$POSTGRES_HOST:$POSTGRES_PORT/haf_block_log"}
+POSTGRES_ACCESS=${POSTGRES_URL:-"postgresql://$POSTGRES_USER@$POSTGRES_HOST:$POSTGRES_PORT/haf_block_log?application_name=${POSTGRES_APP_NAME}"}
 
 create_haf_indexes() {
   if [ "$(psql "$POSTGRES_ACCESS" --quiet --no-align --tuples-only --command="SELECT ${REPTRACKER_SCHEMA}.do_rep_indexes_exist();")" = f ]; then
