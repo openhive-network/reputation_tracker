@@ -68,6 +68,8 @@ POSTGRES_ACCESS=${POSTGRES_URL:-"postgresql://$POSTGRES_USER@$POSTGRES_HOST:$POS
 process_blocks() {
     local n_blocks="${1:-null}"
     log_file="reptracker_sync.log"
+    # record the startup time for use in health checks
+    date -uIseconds > /tmp/block_processing_startup_time.txt
     psql "$POSTGRES_ACCESS" -v "ON_ERROR_STOP=on" -v REPTRACKER_SCHEMA="${REPTRACKER_SCHEMA}" -c "\timing" -c "SET SEARCH_PATH TO ${REPTRACKER_SCHEMA};" -c "CALL ${REPTRACKER_SCHEMA}.main('${REPTRACKER_SCHEMA}', $n_blocks);" 2>&1 | tee -i $log_file
 }
 
