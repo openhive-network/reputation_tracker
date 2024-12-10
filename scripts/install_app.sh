@@ -32,8 +32,6 @@ POSTGRES_URL=${POSTGRES_URL:-""}
 REPTRACKER_SCHEMA=${REPTRACKER_SCHEMA:-"reptracker_app"}
 IS_FORKING=${IS_FORKING:-"true"}
 SWAGGER_URL=${SWAGGER_URL:-"{reptracker-host}"}
-CREATE_SCHEMA=1
-CREATE_INDEXES=1
 POSTGRES_APP_NAME=reptracker_install
 
 
@@ -57,14 +55,6 @@ while [ $# -gt 0 ]; do
     --is_forking=*)
         IS_FORKING="${1#*=}"
         ;;
-    --indexes-only)
-        CREATE_SCHEMA=0
-        POSTGRES_APP_NAME=reptracker_install_indexes
-        ;;
-    --schema-only)
-        CREATE_INDEXES=0
-        POSTGRES_APP_NAME=reptracker_install_schema
-        ;;
     --help)
         print_help
         exit 0
@@ -87,28 +77,11 @@ done
 
 POSTGRES_ACCESS=${POSTGRES_URL:-"postgresql://$POSTGRES_USER@$POSTGRES_HOST:$POSTGRES_PORT/haf_block_log?application_name=${POSTGRES_APP_NAME}"}
 
-create_haf_indexes() {
-  if [ "$(psql "$POSTGRES_ACCESS" --quiet --no-align --tuples-only --command="SELECT ${REPTRACKER_SCHEMA}.do_rep_indexes_exist();")" = f ]; then
-    # if HAF is in massive sync, where most indexes on HAF tables have been deleted, we should wait.  We don't
-    # want to add our own indexes, which would slow down massive sync, so we just wait.
-    echo "Waiting for HAF to be out of massive sync"
-    psql "$POSTGRES_ACCESS" -v "ON_ERROR_STOP=on" -c "SELECT hive.wait_for_ready_instance(ARRAY['${REPTRACKER_SCHEMA}'], interval '3 days');"
-
-    echo "Creating indexes, this might take a while."
-    # There's an un-solved bug that happens any time and app like hafbe adds/drops indexes at the same time
-    # HAF is entering/leaving massive sync.  We need to prevent this, probably by having hafbe set a flag
-    # that prevents haf from re-entering massive sync during the time hafbe is creating indexes
-    psql "$POSTGRES_ACCESS" -v ON_ERROR_STOP=on -c "SET SEARCH_PATH TO ${REPTRACKER_SCHEMA};"  -c "\timing" -f "$SRCPATH/db/rep_indexes.sql"
-  else
-    echo "HAF indexes already exist, skipping creation"
-  fi
-}
-
 #pushd "$reptracker_dir"
 #./scripts/generate_version_sql.sh "$reptracker_dir"
 #popd
 
-if [ "$CREATE_SCHEMA" = 1 ]; then
+
   echo "Installing app..."
   psql "$POSTGRES_ACCESS" -v ON_ERROR_STOP=on -f "$SRCPATH/db/builtin_roles.sql"
   psql "$POSTGRES_ACCESS" -v ON_ERROR_STOP=on -c "SET ROLE reptracker_owner;CREATE SCHEMA IF NOT EXISTS ${REPTRACKER_SCHEMA} AUTHORIZATION reptracker_owner;"
@@ -127,8 +100,6 @@ if [ "$CREATE_SCHEMA" = 1 ]; then
   psql "$POSTGRES_ACCESS" -v ON_ERROR_STOP=on  -c "SET ROLE reptracker_owner;GRANT USAGE ON SCHEMA reptracker_endpoints to reptracker_user;"
   psql "$POSTGRES_ACCESS" -v ON_ERROR_STOP=on  -c "SET ROLE reptracker_owner;GRANT SELECT ON ALL TABLES IN SCHEMA ${REPTRACKER_SCHEMA} TO reptracker_user;"
   psql "$POSTGRES_ACCESS" -v ON_ERROR_STOP=on  -c "SET ROLE reptracker_owner;GRANT SELECT ON ALL TABLES IN SCHEMA reptracker_endpoints TO reptracker_user;"
-fi
+  #register indexes
+  psql "$POSTGRES_ACCESS" -v ON_ERROR_STOP=on -c "SET SEARCH_PATH TO ${REPTRACKER_SCHEMA};"  -f "$SRCPATH/db/rep_indexes.sql"
 
-if [ "$CREATE_INDEXES" = 1 ]; then
-  create_haf_indexes
-fi
