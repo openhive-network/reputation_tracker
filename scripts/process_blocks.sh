@@ -70,6 +70,8 @@ process_blocks() {
     log_file="reptracker_sync.log"
     # record the startup time for use in health checks
     date -uIseconds > /tmp/block_processing_startup_time.txt
+    # wait untill reptracker indexes are created
+    psql "$POSTGRES_ACCESS" -v "ON_ERROR_STOP=on" -c "\timing" -c "SELECT hive.wait_till_registered_indexes_created('${REPTRACKER_SCHEMA}')"
     psql "$POSTGRES_ACCESS" -v "ON_ERROR_STOP=on" -v REPTRACKER_SCHEMA="${REPTRACKER_SCHEMA}" -c "\timing" -c "SET SEARCH_PATH TO ${REPTRACKER_SCHEMA};" -c "CALL ${REPTRACKER_SCHEMA}.main('${REPTRACKER_SCHEMA}', $n_blocks);" 2>&1 | tee -i $log_file
 }
 
