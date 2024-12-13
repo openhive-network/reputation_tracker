@@ -122,7 +122,7 @@ BEGIN
       CONTINUE;
     END IF;
 
-    PERFORM reptracker_process_blocks(_appContext, _blocks_range);
+    CALL reptracker_process_blocks(_appContext, _blocks_range);
   END LOOP;
 
   ASSERT FALSE, 'Cannot reach this point';

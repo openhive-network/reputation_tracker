@@ -46,6 +46,7 @@ CREATE TABLE IF NOT EXISTS account_reputations
     CONSTRAINT PK_account_reputations PRIMARY KEY (account_id)
 );
 
+
 PERFORM hive.app_register_table( __schema_name, 'account_reputations', __schema_name );
 
 DROP TYPE IF EXISTS AccountReputation CASCADE;
@@ -60,6 +61,10 @@ CREATE TYPE AccountReputation AS
 
 END
 $$;
+
+-- the current version of sqlfluff doesn't understand 'GRANT MAINTAIN'
+GRANT MAINTAIN ON ALL TABLES IN SCHEMA reptracker_app TO hived_group; -- noqa: PRS
+GRANT ALL ON SCHEMA reptracker_app TO hived_group;
 
 INSERT INTO reptracker_app_status
 (continue_processing, is_accounts_copied)

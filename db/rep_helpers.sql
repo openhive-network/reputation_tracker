@@ -104,9 +104,8 @@ END
 $$;
 
 
-CREATE OR REPLACE FUNCTION reptracker_process_blocks(_context_name hive.context_name, _block_range hive.blocks_range, _logs BOOLEAN = true)
-RETURNS VOID
-LANGUAGE 'plpgsql' VOLATILE
+CREATE OR REPLACE PROCEDURE reptracker_process_blocks(_context_name hive.context_name, _block_range hive.blocks_range, _logs BOOLEAN = true)
+LANGUAGE 'plpgsql'
 AS
 $$
 BEGIN
@@ -117,6 +116,7 @@ BEGIN
     END IF;
 
     CALL reptracker_massive_processing(_block_range.first_block, _block_range.last_block, _logs);
+    PERFORM hive.app_request_table_vacuum('reptracker_app.account_reputations', interval '10 minutes'); --eventually fixup hard-coded schema name
     RETURN;
   END IF;
 
