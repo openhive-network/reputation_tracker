@@ -16,7 +16,7 @@ BEGIN
           (body_binary::jsonb -> 'value' ->> 'permlink'),
           id desc
       )
-      WHERE hive.operation_id_to_type_id(id) in (17, 61)
+      WHERE hafd.operation_id_to_type_id(id) in (17, 61)
       $idx$
   );
 
@@ -30,7 +30,7 @@ BEGIN
           (body_binary::jsonb -> 'value' ->> 'permlink'),
           id desc 
       )
-      WHERE hive.operation_id_to_type_id(id) = 72
+      WHERE hafd.operation_id_to_type_id(id) = 72
       $idx$
   );
 
