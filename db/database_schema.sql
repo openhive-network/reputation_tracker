@@ -9,7 +9,7 @@ DECLARE
 BEGIN
   SHOW SEARCH_PATH INTO __schema_name;
 
-  synchronization_stages := ARRAY[( 'MASSIVE_PROCESSING', 101, 10000 ), hive.live_stage()]::hive.application_stages;
+  synchronization_stages := ARRAY[hive.stage( 'MASSIVE_PROCESSING', 101, 10000, '10 seconds' ), hive.live_stage()]::hive.application_stages;
 
   v_is_forking := current_setting('custom.is_forking')::BOOLEAN;
 
