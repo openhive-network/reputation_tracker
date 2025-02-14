@@ -86,7 +86,7 @@ POSTGRES_ACCESS=${POSTGRES_URL:-"postgresql://$POSTGRES_USER@$POSTGRES_HOST:$POS
   psql "$POSTGRES_ACCESS" -v ON_ERROR_STOP=on -f "$SRCPATH/db/builtin_roles.sql"
   psql "$POSTGRES_ACCESS" -v ON_ERROR_STOP=on -c "SET ROLE reptracker_owner;CREATE SCHEMA IF NOT EXISTS ${REPTRACKER_SCHEMA} AUTHORIZATION reptracker_owner;"
   psql "$POSTGRES_ACCESS" -v ON_ERROR_STOP=on -c "SET custom.is_forking = '$IS_FORKING'; SET SEARCH_PATH TO ${REPTRACKER_SCHEMA};" -f "$SRCPATH/db/database_schema.sql"
-  psql "$POSTGRES_ACCESS" -v ON_ERROR_STOP=on -c "SET SEARCH_PATH TO ${REPTRACKER_SCHEMA};" -f "$SRCPATH/db/rep_views.sql"
+  psql "$POSTGRES_ACCESS" -v ON_ERROR_STOP=on -c "SET SEARCH_PATH TO ${REPTRACKER_SCHEMA};" -f "$SRCPATH/db/backend.sql"
   psql "$POSTGRES_ACCESS" -v ON_ERROR_STOP=on -c "SET SEARCH_PATH TO ${REPTRACKER_SCHEMA};" -f "$SRCPATH/db/process_block_range.sql"
   psql "$POSTGRES_ACCESS" -v ON_ERROR_STOP=on -c "SET SEARCH_PATH TO ${REPTRACKER_SCHEMA};" -f "$SRCPATH/db/rep_helpers.sql"
   psql "$POSTGRES_ACCESS" -v ON_ERROR_STOP=on -c "SET SEARCH_PATH TO ${REPTRACKER_SCHEMA};" -f "$SRCPATH/db/main_loop.sql"
@@ -101,5 +101,5 @@ POSTGRES_ACCESS=${POSTGRES_URL:-"postgresql://$POSTGRES_USER@$POSTGRES_HOST:$POS
   psql "$POSTGRES_ACCESS" -v ON_ERROR_STOP=on  -c "SET ROLE reptracker_owner;GRANT SELECT ON ALL TABLES IN SCHEMA ${REPTRACKER_SCHEMA} TO reptracker_user;"
   psql "$POSTGRES_ACCESS" -v ON_ERROR_STOP=on  -c "SET ROLE reptracker_owner;GRANT SELECT ON ALL TABLES IN SCHEMA reptracker_endpoints TO reptracker_user;"
   #register indexes
-  psql "$POSTGRES_ACCESS" -v ON_ERROR_STOP=on -c "SET SEARCH_PATH TO ${REPTRACKER_SCHEMA};"  -f "$SRCPATH/db/rep_indexes.sql"
+  #psql "$POSTGRES_ACCESS" -v ON_ERROR_STOP=on -c "SET SEARCH_PATH TO ${REPTRACKER_SCHEMA};"  -f "$SRCPATH/db/rep_indexes.sql"
 

@@ -13,84 +13,188 @@ SET join_collapse_limit = 16
 SET jit = OFF
 AS $BODY$
 DECLARE
-  _result INT;
+  __rep_change INT;
+  __delete_votes INT;
+  __upsert_votes INT;
 BEGIN
-
-WITH select_ef_vote_ops AS MATERIALIZED
-(
-SELECT o.id,
-    o.block_num,
-    o.trx_in_block,
-    o.op_pos,
-    o.body_binary::JSONB as body
-FROM operations_view o WHERE o.op_type_id = 72 
-AND o.block_num BETWEEN _first_block_num AND _last_block_num ),
-selected_range AS MATERIALIZED 
-(
-SELECT 
-  o.id, 
-  o.block_num,     
-  o.body->'value'->>'author' AS author,
-  o.body->'value'->>'voter' AS voter,
-  o.body->'value'->>'permlink' AS permlink,
-  (CASE WHEN jsonb_typeof(o.body->'value'->'rshares') = 'number' THEN
-  (o.body->'value'->'rshares')::bigint
-  ELSE 
-  TRIM(BOTH '"'::text FROM o.body->'value'->>'rshares')::bigint
-  END) AS rshares
-FROM select_ef_vote_ops o
+---------------------------------------------------------------------------------------
+WITH vote_operations AS (
+  SELECT 
+    process_vote_impacting_operations(ov.body, ov.op_type_id) AS effective_votes,
+    ov.op_type_id,
+    ov.id AS source_op
+  FROM operations_view ov
+  WHERE ov.op_type_id IN (72, 17, 61)
+  AND ov.block_num BETWEEN _first_block_num AND _last_block_num 
 ),
-filtered_range AS MATERIALIZED 
-(
-SELECT 
-  up.id AS up_id,
-  up.block_num, 
-  up.author, 
-  up.permlink, 
-  up.voter, 
-  up.rshares AS up_rshares,  
-  COALESCE((
-    SELECT prd.rshares
-    FROM hive_reputation_data_view prd
-    WHERE 
-      prd.author = up.author AND 
-      prd.voter = up.voter AND 
-      prd.permlink = up.permlink AND 
-      prd.id < up.id AND 
-      NOT EXISTS (SELECT NULL FROM deleted_comment_operation_view dp
-    WHERE dp.author = up.author and dp.permlink = up.permlink and dp.id between prd.id and up.id)
-    ORDER BY prd.id DESC LIMIT 1
-  ), 0) AS prev_rshares
-FROM selected_range up
+prepare_vote_comment_data AS MATERIALIZED (
+  SELECT 
+    (SELECT ha.id FROM accounts_view ha WHERE ha.name = (vo.effective_votes).author) AS author_id,
+    (SELECT ha.id FROM accounts_view ha WHERE ha.name = (vo.effective_votes).voter) AS voter_id,
+    (vo.effective_votes).permlink AS permlink,
+    (vo.effective_votes).rshares AS rshares,
+    vo.source_op,
+    vo.op_type_id
+  FROM vote_operations vo
 ),
-balance_change AS MATERIALIZED 
-(
-  SELECT calculate_account_reputations(  
-      ja.up_id,
-      ja.block_num, 
-      ja.author,
-      (SELECT ha.id FROM hive.accounts_view ha WHERE ha.name = ja.author),
-      ja.permlink, 
-      ja.voter, 
-      (SELECT hv.id FROM hive.accounts_view hv WHERE hv.name = ja.voter),
-      ja.up_rshares, 
-      ja.prev_rshares)
-  FROM filtered_range ja
-  ORDER BY ja.up_id
+---------------------------------------------------------------------------------------
+-- Insert currently processed permlinks and reuse it in the following steps
+supplement_permlink_dictionary AS (
+  INSERT INTO permlinks AS dict 
+    (permlink)
+  SELECT DISTINCT permlink
+  FROM prepare_vote_comment_data 
+  ON CONFLICT (permlink) DO UPDATE SET
+    permlink = EXCLUDED.permlink 
+  RETURNING (xmax = 0) as is_new_permlink, dict.permlink_id, dict.permlink
+),
+prev_votes_in_query AS (
+  SELECT 
+    ja.author_id,
+    ja.voter_id,
+    sp.permlink_id,
+    ja.rshares,
+    ja.source_op,
+    ja.op_type_id
+  FROM prepare_vote_comment_data ja
+  JOIN supplement_permlink_dictionary sp ON ja.permlink = sp.permlink
+),
+ranked_data AS MATERIALIZED (
+  SELECT 
+    author_id,
+    voter_id,
+    permlink_id,
+    rshares,
+    source_op,
+    op_type_id,
+    ROW_NUMBER() OVER (PARTITION BY author_id, voter_id, permlink_id ORDER BY source_op DESC) AS row_num
+  FROM prev_votes_in_query
+),
+-- Prepare resets for reputation calculation
+join_permlink_id_to_deletes AS MATERIALIZED (
+  SELECT 
+    author_id,
+    permlink_id,
+    source_op,
+    row_num
+  FROM ranked_data
+  WHERE op_type_id != 72 
+),
+add_prev_votes AS (
+  SELECT 
+    current.author_id,
+    current.voter_id,
+    current.permlink_id,
+    current.rshares,
+    current.source_op,
+    previous.rshares AS prev_rshares,
+    COALESCE(previous.source_op, 0) AS prev_source_op,
+    current.row_num
+  FROM ranked_data current
+  LEFT JOIN ranked_data previous ON 
+    current.author_id = previous.author_id AND
+    current.voter_id = previous.voter_id AND
+    current.permlink_id = previous.permlink_id AND
+    current.op_type_id = previous.op_type_id AND
+    current.row_num = previous.row_num - 1
+  WHERE current.op_type_id = 72
+),
+-- Link previous votes
+find_prev_votes_in_table AS (
+  SELECT 
+    q.author_id,
+    q.voter_id,
+    q.permlink_id,
+    q.rshares,
+    COALESCE(q.prev_rshares, av.rshares, 0) AS prev_rshares,
+    q.source_op,
+    q.prev_source_op,
+    q.row_num
+  FROM add_prev_votes q
+  LEFT JOIN active_votes av ON 
+    q.prev_rshares IS NULL AND 
+    q.author_id = av.author_id AND
+    q.voter_id = av.voter_id AND
+    q.permlink_id = av.permlink_serial_id
+),
+-- Check and reset previous rshares
+check_if_prev_balances_canceled AS (
+  SELECT 
+    ja.author_id,
+    ja.voter_id,
+    ja.permlink_id,
+    ja.rshares,
+    ja.source_op,
+    CASE
+      WHEN ja.prev_rshares != 0 AND NOT EXISTS (
+        SELECT NULL
+        FROM join_permlink_id_to_deletes dp 
+        WHERE 
+          dp.author_id = ja.author_id AND
+          dp.permlink_id = ja.permlink_id AND
+          dp.source_op BETWEEN ja.prev_source_op AND ja.source_op
+        LIMIT 1
+      ) THEN ja.prev_rshares
+      ELSE 0
+    END AS prev_rshares,
+    ja.row_num
+  FROM find_prev_votes_in_table ja
+),
+---------------------------------------------------------------------------------------
+rep_change AS (
+  SELECT 
+    calculate_account_reputations(  
+      uv.author_id,
+      uv.voter_id,
+      uv.rshares, 
+      uv.prev_rshares
+    )
+  FROM check_if_prev_balances_canceled uv
+  ORDER BY uv.source_op
+),
+delete_votes AS (
+  DELETE FROM active_votes av
+  USING join_permlink_id_to_deletes dp
+  WHERE 
+    av.author_id = dp.author_id AND
+    av.permlink_serial_id = dp.permlink_id AND
+    dp.row_num = 1
+  RETURNING av.author_id, av.permlink_serial_id
+),
+upsert_votes AS (
+  INSERT INTO active_votes AS av 
+    (author_id, voter_id, permlink_serial_id, rshares)
+  SELECT 
+    author_id,
+    voter_id,
+    permlink_id,
+    rshares
+  FROM ranked_data uv
+  WHERE 
+    uv.row_num = 1 AND 
+    uv.op_type_id = 72 AND
+    NOT EXISTS (
+      SELECT NULL 
+      FROM join_permlink_id_to_deletes dv 
+      WHERE dv.author_id = uv.author_id AND dv.permlink_id = uv.permlink_id AND dv.source_op > uv.source_op
+      LIMIT 1
+    )
+  ON CONFLICT ON CONSTRAINT pk_active_votes DO UPDATE SET
+    rshares = EXCLUDED.rshares
+  RETURNING av.author_id, av.voter_id, av.permlink_serial_id
 )
 
-SELECT COUNT(*) FROM balance_change INTO _result;
+SELECT
+  (SELECT count(*) FROM rep_change) AS rep_change,
+  (SELECT count(*) FROM delete_votes) AS delete_votes,
+  (SELECT count(*) FROM upsert_votes) AS upsert_votes
+INTO __rep_change, __delete_votes, __upsert_votes;
 
 END
 $BODY$;
 
 CREATE OR REPLACE FUNCTION calculate_account_reputations(
-    _id BIGINT,
-    _block_num INT,
-    _author TEXT,
     _author_id INT,
-    _permlink TEXT,
-    _voter TEXT,
     _voter_id INT,
     _rshares BIGINT,
     _prev_rshares BIGINT
@@ -139,16 +243,6 @@ __voter_rep := __account_reputations[2].reputation;
 __implicit_author_rep := __account_reputations[1].is_implicit;
 __implicit_voter_rep := __account_reputations[2].is_implicit;
 
-IF __debug_log THEN
-  raise notice 'Block: % - Preprocessing a vote: author: %, voter: % permlink: %', _block_num, _author, _voter, _permlink;
-
-  --- Author must have set explicit reputation to allow its correction
-IF NOT __implicit_author_rep AND __prev_rshares != 0 THEN
-    raise notice 'Author % reputation (pre-correction): %', _author, __author_rep;
-    raise notice 'Author % - Correcting a vote: (voter: %) rshares: %', _author, _voter, __prev_rshares;
-    raise notice 'Author % - Voter % reputation: %', _author, _voter, __voter_rep;
-  END IF;
-END IF;
 
 --- Author must have set explicit reputation to allow its correction
 --- Voter must have explicitly set reputation to match hived old conditions
@@ -165,33 +259,12 @@ __implicit_author_rep := __author_rep = 0;
 
   __account_reputations[1] := ROW(_author_id, __author_rep, __implicit_author_rep, true)::AccountReputation;
 
-IF __debug_log THEN 
-    IF __implicit_author_rep THEN
-      raise notice 'Author % reputation (past-correction): implicit-0', _author;
-    ELSE
-      raise notice 'Author % reputation (past-correction): %', _author, __author_rep;
-    END IF;
-  END IF;
-
-END IF;
-
-IF __debug_log THEN 
-  raise notice 'Block: % - Author % - Processing a vote: (voter: %) rshares: %', _block_num, _author, _voter, __rshares;
-  raise notice 'Author % - Voter % reputation: %', _author, _voter, __voter_rep;
 END IF;
 
 IF __voter_rep >= 0 AND (__rshares >= 0 OR (__rshares < 0 AND NOT __implicit_voter_rep AND __voter_rep > __author_rep)) THEN
 
   __new_author_rep = __author_rep + (__rshares >> 6)::BIGINT;
   __account_reputations[1] := ROW(_author_id, __new_author_rep, false, true)::AccountReputation;
-
-IF __debug_log THEN 
-    IF __implicit_author_rep THEN
-      raise notice 'Setting a reputation of author: % to %', _author, __new_author_rep;
-    ELSE
-      raise notice 'Changing reputation of author: % from % to %', _author, __author_rep, __new_author_rep;
-    END IF;
-  END IF;
 
 END IF;
 

@@ -49,6 +49,27 @@ CREATE TABLE IF NOT EXISTS account_reputations
 
 PERFORM hive.app_register_table( __schema_name, 'account_reputations', __schema_name );
 
+CREATE TABLE IF NOT EXISTS permlinks
+(
+    permlink_id SERIAL PRIMARY KEY,
+    permlink TEXT UNIQUE
+);
+
+PERFORM hive.app_register_table( __schema_name, 'permlinks', __schema_name );
+
+CREATE TABLE IF NOT EXISTS active_votes
+(
+    author_id INT NOT NULL,
+    voter_id INT NOT NULL,
+    permlink_serial_id INT NOT NULL,
+    rshares BIGINT NOT NULL,
+
+    CONSTRAINT pk_active_votes PRIMARY KEY (author_id, permlink_serial_id, voter_id),
+    CONSTRAINT fk_active_votes_permlink FOREIGN KEY (permlink_serial_id) REFERENCES permlinks (permlink_id) deferrable
+);
+
+PERFORM hive.app_register_table( __schema_name, 'active_votes', __schema_name );
+
 DROP TYPE IF EXISTS AccountReputation CASCADE;
 CREATE TYPE AccountReputation AS 
 (

@@ -117,6 +117,8 @@ BEGIN
 
     CALL reptracker_massive_processing(_block_range.first_block, _block_range.last_block, _logs);
     PERFORM hive.app_request_table_vacuum('reptracker_app.account_reputations', interval '10 minutes'); --eventually fixup hard-coded schema name
+    PERFORM hive.app_request_table_vacuum('reptracker_app.active_votes', interval '10 minutes'); --eventually fixup hard-coded schema nam
+    PERFORM hive.app_request_table_vacuum('reptracker_app.permlinks', interval '10 minutes'); --eventually fixup hard-coded schema name
     RETURN;
   END IF;
 
