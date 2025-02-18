@@ -20,22 +20,16 @@ BEGIN
 ---------------------------------------------------------------------------------------
 WITH vote_operations AS (
   SELECT 
-    process_vote_impacting_operations(ov.body, ov.op_type_id) AS effective_votes,
+    (SELECT ha.id FROM accounts_view ha WHERE ha.name = effective_votes.author) AS author_id,
+    (SELECT ha.id FROM accounts_view ha WHERE ha.name = effective_votes.voter) AS voter_id,
+    effective_votes.permlink,
+    effective_votes.rshares,
     ov.op_type_id,
     ov.id AS source_op
   FROM operations_view ov
+  CROSS JOIN process_vote_impacting_operations(ov.body, ov.op_type_id) AS effective_votes
   WHERE ov.op_type_id IN (72, 17, 61)
   AND ov.block_num BETWEEN _first_block_num AND _last_block_num 
-),
-prepare_vote_comment_data AS MATERIALIZED (
-  SELECT 
-    (SELECT ha.id FROM accounts_view ha WHERE ha.name = (vo.effective_votes).author) AS author_id,
-    (SELECT ha.id FROM accounts_view ha WHERE ha.name = (vo.effective_votes).voter) AS voter_id,
-    (vo.effective_votes).permlink AS permlink,
-    (vo.effective_votes).rshares AS rshares,
-    vo.source_op,
-    vo.op_type_id
-  FROM vote_operations vo
 ),
 ---------------------------------------------------------------------------------------
 -- Insert currently processed permlinks and reuse it in the following steps
@@ -43,7 +37,7 @@ supplement_permlink_dictionary AS (
   INSERT INTO permlinks AS dict 
     (permlink)
   SELECT DISTINCT permlink
-  FROM prepare_vote_comment_data 
+  FROM vote_operations 
   ON CONFLICT (permlink) DO UPDATE SET
     permlink = EXCLUDED.permlink 
   RETURNING (xmax = 0) as is_new_permlink, dict.permlink_id, dict.permlink
@@ -56,7 +50,7 @@ prev_votes_in_query AS (
     ja.rshares,
     ja.source_op,
     ja.op_type_id
-  FROM prepare_vote_comment_data ja
+  FROM vote_operations ja
   JOIN supplement_permlink_dictionary sp ON ja.permlink = sp.permlink
 ),
 ranked_data AS MATERIALIZED (
@@ -205,7 +199,6 @@ VOLATILE
 SET jit = OFF
 AS $BODY$
 DECLARE
-  __prev_rep_delta BIGINT := (_prev_rshares >> 6)::BIGINT;
   _is_changed BOOLEAN := FALSE;
 
   _author_reputation BIGINT;
@@ -230,9 +223,10 @@ BEGIN
 
 --- Author must have set explicit reputation to allow its correction
 --- Voter must have explicitly set reputation to match hived old conditions
-IF NOT _author_is_implicit AND _voter_reputation >= 0 AND (_prev_rshares >= 0 OR (_prev_rshares < 0 AND NOT _voter_is_implicit AND _voter_reputation > _author_reputation - __prev_rep_delta)) THEN
+IF NOT _author_is_implicit AND _voter_reputation >= 0 AND 
+  (_prev_rshares >= 0 OR (_prev_rshares < 0 AND NOT _voter_is_implicit AND _voter_reputation > _author_reputation - (_prev_rshares >> 6)::BIGINT)) THEN
 
-  _author_reputation := _author_reputation - __prev_rep_delta;
+  _author_reputation := _author_reputation - (_prev_rshares >> 6)::BIGINT;
   _author_is_implicit := _author_reputation = 0;
   _is_changed := TRUE;
 
