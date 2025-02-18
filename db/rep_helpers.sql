@@ -32,27 +32,6 @@ BEGIN
 END
 $$;
 
-CREATE OR REPLACE FUNCTION isAccountsCopied()
-RETURNS BOOLEAN
-LANGUAGE 'plpgsql' STABLE
-AS
-$$
-BEGIN
-  RETURN is_accounts_copied FROM reptracker_app_status LIMIT 1;
-END
-$$;
-
-CREATE OR REPLACE FUNCTION updateAccountsCopied(_is_accounts_copied BOOLEAN)
-RETURNS VOID
-LANGUAGE 'plpgsql'
-AS
-$$
-BEGIN
-  UPDATE reptracker_app_status SET is_accounts_copied = _is_accounts_copied;
-END
-$$;
-
-
 CREATE OR REPLACE FUNCTION get_version()
 RETURNS TEXT
 LANGUAGE 'plpgsql' STABLE
@@ -82,48 +61,18 @@ END IF;
 END
 $$;
 
-CREATE OR REPLACE FUNCTION prepare_account_reputations()
-RETURNS VOID
-LANGUAGE 'plpgsql' VOLATILE
-AS
-$$
-BEGIN
-  WITH select_account_reputations AS MATERIALIZED
-  (
-  SELECT ha.id AS ha_id, 0, true, ar.account_id as ar_id
-  FROM hive.accounts_view ha
-  LEFT JOIN account_reputations ar ON ar.account_id = ha.id
-  )
-  INSERT INTO account_reputations
-    (account_id, reputation, is_implicit)
-  SELECT sar.ha_id, 0, true
-  FROM select_account_reputations sar
-  WHERE sar.ar_id IS NULL;
-
-END
-$$;
-
-
 CREATE OR REPLACE PROCEDURE reptracker_process_blocks(_context_name hive.context_name, _block_range hive.blocks_range, _logs BOOLEAN = true)
 LANGUAGE 'plpgsql'
 AS
 $$
 BEGIN
   IF hive.get_current_stage_name(_context_name) = 'MASSIVE_PROCESSING' THEN
-    IF NOT isAccountsCopied() THEN
-      PERFORM prepare_account_reputations();
-      PERFORM updateAccountsCopied(true);
-    END IF;
 
     CALL reptracker_massive_processing(_block_range.first_block, _block_range.last_block, _logs);
     PERFORM hive.app_request_table_vacuum('reptracker_app.account_reputations', interval '10 minutes'); --eventually fixup hard-coded schema name
     PERFORM hive.app_request_table_vacuum('reptracker_app.active_votes', interval '10 minutes'); --eventually fixup hard-coded schema nam
     PERFORM hive.app_request_table_vacuum('reptracker_app.permlinks', interval '10 minutes'); --eventually fixup hard-coded schema name
     RETURN;
-  END IF;
-
-  IF isAccountsCopied() THEN
-    PERFORM updateAccountsCopied(false);
   END IF;
 
   CALL reptracker_single_processing(_block_range.first_block, _block_range.last_block, _logs);

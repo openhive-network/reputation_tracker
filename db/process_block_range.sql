@@ -142,8 +142,8 @@ check_if_prev_balances_canceled AS (
 ),
 ---------------------------------------------------------------------------------------
 rep_change AS (
-  SELECT 
-    calculate_account_reputations(  
+  SELECT
+    calculate_account_reputations(
       uv.author_id,
       uv.voter_id,
       uv.rshares, 
@@ -201,86 +201,69 @@ CREATE OR REPLACE FUNCTION calculate_account_reputations(
 )
 RETURNS VOID
 LANGUAGE 'plpgsql'
-VOLATILE 
-SET from_collapse_limit = 16
-SET join_collapse_limit = 16
+VOLATILE
 SET jit = OFF
 AS $BODY$
 DECLARE
-  __account_reputations AccountReputation[];
-  __author_rep bigint;
-  __voter_rep bigint;
-  __implicit_voter_rep boolean;
-  __implicit_author_rep boolean;
-  __prev_rep_delta bigint := (_prev_rshares >> 6)::BIGINT;
-  __prev_rshares BIGINT := _prev_rshares;
-  __rshares BIGINT := _rshares;
-  __new_author_rep BIGINT;
-  __debug_log boolean := false;
+  __prev_rep_delta BIGINT := (_prev_rshares >> 6)::BIGINT;
+  _is_changed BOOLEAN := FALSE;
+
+  _author_reputation BIGINT;
+  _author_is_implicit BOOLEAN;
+  _voter_reputation BIGINT;
+  _voter_is_implicit BOOLEAN;
 BEGIN
 
-SELECT INTO __account_reputations
-ARRAY(
-  SELECT 
-    ROW(default_values.account_id, COALESCE(ad.reputation, 0), COALESCE(ad.is_implicit, true), false)::AccountReputation 
-  FROM 
-    (
-      SELECT ar.account_id, ar.reputation, ar.is_implicit  
-      FROM account_reputations ar
-      WHERE ar.account_id = _author_id OR ar.account_id = _voter_id
-    ) AS ad
-  RIGHT JOIN 
-    (
-      SELECT _author_id AS account_id
-      UNION ALL 
-      SELECT _voter_id AS account_id
-    ) AS default_values
-  ON 
-    ad.account_id = default_values.account_id);
+  SELECT ar.reputation, ar.is_implicit
+  INTO _author_reputation, _author_is_implicit
+  FROM account_reputations ar WHERE ar.account_id = _author_id;
 
-__author_rep := __account_reputations[1].reputation;
-__voter_rep := __account_reputations[2].reputation;
-__implicit_author_rep := __account_reputations[1].is_implicit;
-__implicit_voter_rep := __account_reputations[2].is_implicit;
+  SELECT ar.reputation, ar.is_implicit
+  INTO _voter_reputation, _voter_is_implicit
+  FROM account_reputations ar WHERE ar.account_id = _voter_id;
 
+  _author_reputation := COALESCE(_author_reputation, 0);
+  _author_is_implicit := COALESCE(_author_is_implicit, TRUE);
+  
+  _voter_reputation := COALESCE(_voter_reputation,0);
+  _voter_is_implicit := COALESCE(_voter_is_implicit, TRUE);
 
 --- Author must have set explicit reputation to allow its correction
 --- Voter must have explicitly set reputation to match hived old conditions
-IF NOT __implicit_author_rep AND __voter_rep >= 0 AND (__prev_rshares >= 0 OR (__prev_rshares < 0 AND NOT __implicit_voter_rep AND __voter_rep > __author_rep - __prev_rep_delta)) THEN
+IF NOT _author_is_implicit AND _voter_reputation >= 0 AND (_prev_rshares >= 0 OR (_prev_rshares < 0 AND NOT _voter_is_implicit AND _voter_reputation > _author_reputation - __prev_rep_delta)) THEN
 
-  __author_rep := __author_rep - __prev_rep_delta;
-__implicit_author_rep := __author_rep = 0;
+  _author_reputation := _author_reputation - __prev_rep_delta;
+  _author_is_implicit := _author_reputation = 0;
+  _is_changed := TRUE;
 
-  IF _voter_id = _author_id THEN 
+  IF _author_id = _voter_id THEN 
     --- reread voter's rep. since it can change above if author == voter
-    __implicit_voter_rep := __implicit_author_rep;
-    __voter_rep := __author_rep;
+    _voter_is_implicit := _author_is_implicit;
+    _voter_reputation := _author_reputation;
   END IF;
 
-  __account_reputations[1] := ROW(_author_id, __author_rep, __implicit_author_rep, true)::AccountReputation;
+END IF;
+
+IF _voter_reputation >= 0 AND (_rshares >= 0 OR (_rshares < 0 AND NOT _voter_is_implicit AND _voter_reputation > _author_reputation)) THEN
+
+  _is_changed := TRUE;
+  _author_reputation = _author_reputation + (_rshares >> 6)::BIGINT;
+  _author_is_implicit := false;
 
 END IF;
 
-IF __voter_rep >= 0 AND (__rshares >= 0 OR (__rshares < 0 AND NOT __implicit_voter_rep AND __voter_rep > __author_rep)) THEN
+IF _is_changed THEN
 
-  __new_author_rep = __author_rep + (__rshares >> 6)::BIGINT;
-  __account_reputations[1] := ROW(_author_id, __new_author_rep, false, true)::AccountReputation;
+  INSERT INTO account_reputations (account_id, reputation, is_implicit)
+  SELECT _author_id, _author_reputation, _author_is_implicit
+  ON CONFLICT (account_id) DO UPDATE
+  SET 
+      reputation = EXCLUDED.reputation, 
+      is_implicit = EXCLUDED.is_implicit;
 
 END IF;
 
-INSERT INTO account_reputations
-  (account_id, reputation, is_implicit)
-SELECT ds.id, ds.reputation, ds.is_implicit
-FROM unnest(__account_reputations) ds
-WHERE ds.reputation IS NOT NULL AND ds.changed
-ON CONFLICT (account_id) DO UPDATE
-SET 
-    reputation = EXCLUDED.reputation,
-    is_implicit = EXCLUDED.is_implicit
-;
-  
 END
 $BODY$;
-
 
 RESET ROLE;

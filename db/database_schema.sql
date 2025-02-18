@@ -70,16 +70,6 @@ CREATE TABLE IF NOT EXISTS active_votes
 
 PERFORM hive.app_register_table( __schema_name, 'active_votes', __schema_name );
 
-DROP TYPE IF EXISTS AccountReputation CASCADE;
-CREATE TYPE AccountReputation AS 
-(
-  id INT,
-  reputation BIGINT,
-  is_implicit BOOLEAN, 
-  changed BOOLEAN
-);
-
-
 END
 $$;
 
