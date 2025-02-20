@@ -61,24 +61,6 @@ END IF;
 END
 $$;
 
-CREATE OR REPLACE PROCEDURE reptracker_process_blocks(_context_name hive.context_name, _block_range hive.blocks_range, _logs BOOLEAN = true)
-LANGUAGE 'plpgsql'
-AS
-$$
-BEGIN
-  IF hive.get_current_stage_name(_context_name) = 'MASSIVE_PROCESSING' THEN
-
-    CALL reptracker_massive_processing(_block_range.first_block, _block_range.last_block, _logs);
-    PERFORM hive.app_request_table_vacuum('reptracker_app.account_reputations', interval '10 minutes'); --eventually fixup hard-coded schema name
-    PERFORM hive.app_request_table_vacuum('reptracker_app.active_votes', interval '10 minutes'); --eventually fixup hard-coded schema nam
-    PERFORM hive.app_request_table_vacuum('reptracker_app.permlinks', interval '10 minutes'); --eventually fixup hard-coded schema name
-    RETURN;
-  END IF;
-
-  CALL reptracker_single_processing(_block_range.first_block, _block_range.last_block, _logs);
-END
-$$;
-
 CREATE OR REPLACE FUNCTION do_rep_indexes_exist()
 RETURNS BOOLEAN
 LANGUAGE 'plpgsql' VOLATILE
