@@ -129,5 +129,33 @@ BEGIN
 END
 $$;
 
+DO $$
+DECLARE 
+  __schema_name VARCHAR;
+BEGIN
+  SHOW SEARCH_PATH INTO __schema_name;
+
+  EXECUTE format( 
+    $BODY$
+      CREATE OR REPLACE PROCEDURE %I.reptracker_process_blocks(_context_name hive.context_name, _block_range hive.blocks_range, _logs BOOLEAN = true)
+      LANGUAGE 'plpgsql'
+      AS
+      $pb$
+      BEGIN
+        IF hive.get_current_stage_name(_context_name) = 'MASSIVE_PROCESSING' THEN
+
+          CALL reptracker_massive_processing(_block_range.first_block, _block_range.last_block, _logs);
+          PERFORM hive.app_request_table_vacuum('%s.account_reputations', interval '10 minutes'); 
+          PERFORM hive.app_request_table_vacuum('%s.active_votes', interval '10 minutes'); 
+          PERFORM hive.app_request_table_vacuum('%s.permlinks', interval '100 minutes');
+          RETURN;
+        END IF;
+
+        CALL reptracker_single_processing(_block_range.first_block, _block_range.last_block, _logs);
+      END
+      $pb$
+    $BODY$, __schema_name, __schema_name, __schema_name, __schema_name);
+END
+$$;
 
 RESET ROLE;
