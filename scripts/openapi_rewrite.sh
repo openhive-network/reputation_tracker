@@ -16,6 +16,7 @@ OUTPUT="$SCRIPTDIR/output"
 ENDPOINTS_IN_ORDER="
 ../$endpoints/endpoint_schema.sql
 ../$endpoints/get_reputation.sql
+../$endpoints/get_rep_version.sql
 ../$endpoints/get_rep_last_synced_block.sql"
 
 # Function to reverse the lines
