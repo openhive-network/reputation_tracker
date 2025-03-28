@@ -1,17 +1,11 @@
-# syntax=docker/dockerfile:1.5
-ARG PAAS_PSQL_VERSION=11251948d5dd4867552f9b9836a9e02110304df5
-FROM ghcr.io/alphagov/paas/psql:${PAAS_PSQL_VERSION} AS psql_client
+ARG PSQL_CLIENT_VERSION=14-1
+FROM registry.gitlab.syncad.com/hive/common-ci-configuration/psql:${PSQL_CLIENT_VERSION} AS psql_client
 
-RUN <<EOF
-  set -e
-  apk add --no-cache bash
-  adduser -s /bin/bash -G users -D "haf_admin"
-EOF
+FROM psql_client as version-calculcation
 
-USER haf_admin
-WORKDIR /home/haf_admin
-
-ENTRYPOINT [ "/bin/bash", "-c" ]
+COPY --chown=haf_admin:users . /home/haf_admin/src
+WORKDIR /home/haf_admin/src
+RUN scripts/generate_version_sql.sh $(pwd)
 
 FROM psql_client AS full
 
@@ -53,6 +47,7 @@ COPY db /app/db
 COPY endpoints /app/endpoints
 COPY account_dump /app/account_dump
 COPY docker/scripts/block-processing-healthcheck.sh /app/block-processing-healthcheck.sh
-COPY docker/scripts/docker-entrypoint.sh /app/docker-entrypoint.sh
+COPY docker/scripts/docker_entrypoint.sh /app/docker_entrypoint.sh
+COPY --from=version-calculcation --chown=haf_admin:users /home/haf_admin/src/scripts/set_version_in_sql.pgsql /app/scripts/set_version_in_sql.pgsql
 
-ENTRYPOINT ["/app/docker-entrypoint.sh"]
+ENTRYPOINT ["/app/docker_entrypoint.sh"]
