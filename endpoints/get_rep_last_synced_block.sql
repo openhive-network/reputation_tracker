@@ -1,5 +1,13 @@
 SET ROLE reptracker_owner;
 
+DO $$
+DECLARE 
+  __schema_name VARCHAR;
+BEGIN
+SHOW SEARCH_PATH INTO __schema_name;
+EXECUTE format( 
+$BODY$
+
 /** openapi:paths
 /last-synced-block:
   get:
@@ -34,13 +42,17 @@ DROP FUNCTION IF EXISTS reptracker_endpoints.get_rep_last_synced_block;
 CREATE OR REPLACE FUNCTION reptracker_endpoints.get_rep_last_synced_block()
 RETURNS INT 
 -- openapi-generated-code-end
-LANGUAGE 'plpgsql' STABLE
+LANGUAGE 'plpgsql' VOLATILE
 AS
-$$
+$pb$
 BEGIN
+  PERFORM set_config('response.headers', '[{"Cache-Control": "public, max-age=0"}]', true);
+  RETURN current_block_num FROM hafd.contexts WHERE name = '%s';
+END
+$pb$;
 
-  PERFORM set_config('response.headers', '[{"Cache-Control": "public, max-age=2"}]', true);
-  RETURN hive.app_get_current_block_num( 'reptracker_app' );
+$BODY$,
+__schema_name, __schema_name);
 END
 $$;
 

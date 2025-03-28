@@ -34,8 +34,7 @@ CREATE TABLE IF NOT EXISTS reptracker_app_status
 );
 
 CREATE TABLE IF NOT EXISTS version(
-  schema_hash TEXT,
-  runtime_hash TEXT
+  git_hash TEXT
 );
 
 CREATE TABLE IF NOT EXISTS account_reputations
