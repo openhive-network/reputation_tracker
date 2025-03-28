@@ -104,6 +104,32 @@ declare
         }
       }
     },
+    "/version": {
+      "get": {
+        "tags": [
+          "Other"
+        ],
+        "summary": "Get reputation tracker''s version",
+        "description": "Get reputation tracker''s last commit hash (versions set by by hash value).\n\nSQL example\n* `SELECT * FROM reptracker_endpoints.get_reptracker_version();`\n\nREST call example\n* `GET ''https://%1$s/balance-api/version''`\n",
+        "operationId": "reptracker_endpoints.get_reptracker_version",
+        "responses": {
+          "200": {
+            "description": "reputation tracker version\n\n* Returns `TEXT`\n",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "string"
+                },
+                "example": "c2fed8958584511ef1a66dab3dbac8c40f3518f0"
+              }
+            }
+          },
+          "404": {
+            "description": "App not installed"
+          }
+        }
+      }
+    },
     "/last-synced-block": {
       "get": {
         "tags": [
