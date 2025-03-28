@@ -4,7 +4,7 @@
 # usage: ./generate_version_sql.sh root_project_dir
 # example: ./generate_version_sql.sh $PWD
 # example: ./generate_version_sql.sh /var/my/sources
-# example: ./generate_version_sql.sh /sources/submodules/hafbe /sources/.git/modules/submodules/hafbe
+# example: ./generate_version_sql.sh /sources/submodules/reptracker /sources/.git/modules/submodules/reptracker
 
 set -euo pipefail
 
@@ -18,4 +18,4 @@ GIT_DIR=${2:-"$1/.git"}
 # Rationale:  https://www.shellcheck.net/wiki/SC2006
 GIT_HASH=$(git --git-dir="$GIT_DIR" --work-tree="$GIT_WORK_TREE" rev-parse HEAD)
 
-echo "SELECT reptracker_app.set_version('$GIT_HASH');" > "$PATH_TO_SQL_VERSION_FILE"
+echo "TRUNCATE TABLE version; INSERT INTO version(git_hash) VALUES ('$GIT_HASH');" > "$PATH_TO_SQL_VERSION_FILE"
