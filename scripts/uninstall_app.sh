@@ -23,7 +23,6 @@ POSTGRES_HOST=${POSTGRES_HOST:-"localhost"}
 POSTGRES_PORT=${POSTGRES_PORT:-5432}
 POSTGRES_URL=${POSTGRES_URL:-""}
 REPTRACKER_SCHEMA=${REPTRACKER_SCHEMA:-"reptracker_app"}
-DROP_INDEXES=${DROP_INDEXES:-0}
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -38,9 +37,6 @@ while [ $# -gt 0 ]; do
         ;;
     --postgres-url=*)
         POSTGRES_URL="${1#*=}"
-        ;;
-    --drop-indexes*)
-        DROP_INDEXES=1
         ;;
     --schema=*)
         REPTRACKER_SCHEMA="${1#*=}"
@@ -97,15 +93,6 @@ EOF
   psql "$POSTGRES_ACCESS" -v "ON_ERROR_STOP=OFF" -c "DROP SCHEMA IF EXISTS ${REPTRACKER_SCHEMA} CASCADE;"
 
   psql "$POSTGRES_ACCESS" -c "${drop_users_sql}" || true
-
-  if [ "${DROP_INDEXES}" -eq 1 ]; then
-    echo "Attempting to drop indexes built by application"
-
-    psql -aw "$POSTGRES_ACCESS" -v ON_ERROR_STOP=on -c 'DROP INDEX IF EXISTS hafd.effective_comment_vote_idx;'
-    psql -aw "$POSTGRES_ACCESS" -v ON_ERROR_STOP=on -c 'DROP INDEX IF EXISTS hafd.delete_comment_op_idx;'
-  else
-    echo "Indexes created by application have been preserved"
-  fi
 }
 
 uninstall_app
