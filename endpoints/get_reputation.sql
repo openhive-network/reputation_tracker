@@ -51,6 +51,10 @@ DECLARE
     _result INT;
     _account_id INT = (SELECT av.id FROM hive.accounts_view av WHERE av.name = "account-name");
 BEGIN
+IF _account_id IS NULL THEN
+  PERFORM rest_raise_missing_account("account-name");
+END IF;
+
 PERFORM set_config('response.headers', '[{"Cache-Control": "public, max-age=2"}]', true);
 
 SELECT ar.reputation INTO _rep
