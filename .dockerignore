@@ -1,4 +1,4 @@
-.git/modules/
+git/modules
 .vscode/
 docker/blockchain/
 docker/ci/

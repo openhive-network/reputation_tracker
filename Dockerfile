@@ -1,13 +1,14 @@
+# syntax=registry.gitlab.syncad.com/hive/common-ci-configuration/dockerfile:1.5
 ARG PSQL_CLIENT_VERSION=14-1
-FROM registry.gitlab.syncad.com/hive/common-ci-configuration/psql:${PSQL_CLIENT_VERSION} AS psql_client
+FROM registry.gitlab.syncad.com/hive/common-ci-configuration/psql:${PSQL_CLIENT_VERSION} AS psql
 
-FROM psql_client as version-calculcation
+FROM psql as version-calculcation
 
 COPY --chown=haf_admin:users . /home/haf_admin/src
 WORKDIR /home/haf_admin/src
 RUN scripts/generate_version_sql.sh $(pwd)
 
-FROM psql_client AS full
+FROM psql AS full
 
 ARG BUILD_TIME
 ARG GIT_COMMIT_SHA
