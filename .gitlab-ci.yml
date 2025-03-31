@@ -375,7 +375,7 @@ performance-test:
   - |
     echo -e "\e[0Ksection_start:$(date +%s):tests\r\e[0KRunning tests..."
 
-    timeout -k 1m 10m ./tests/performance/run_performance_tests.sh --backend-host=docker
+    timeout -k 1m 10m ./tests/performance/run_performance_tests.sh --backend-host=postgrest-server
     tar -czvf tests/performance/results.tar.gz $(pwd)/tests/performance/*result.*
     cat jmeter.log | python3 docker/ci/parse-jmeter-output.py
     m2u --input $(pwd)/tests/performance/result.xml --output $(pwd)/tests/performance/junit-result.xml

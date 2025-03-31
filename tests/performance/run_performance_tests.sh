@@ -13,25 +13,25 @@ backend_host=${BACKEND_HOST:-localhost}
 
 
 while [ $# -gt 0 ]; do
-case "$1" in
+  case "$1" in
     --test-report-dir=*)
-    test_report_dir="${1#*=}"
-    ;;
+      test_report_dir="${1#*=}"
+      ;;
     --test-result-path=*)
-    test_result_path="${1#*=}"
-    ;;
+      test_result_path="${1#*=}"
+      ;;
     --test-thread-count=*)
-    test_thread_count="${1#*=}"
-    ;;
+      test_thread_count="${1#*=}"
+      ;;
     --test-loop-count=*)
-    test_loop_count="${1#*=}"
-    ;;
+      test_loop_count="${1#*=}"
+      ;;
     --backend-port=*)
-    backend_port="${1#*=}"
-    ;;
+      backend_port="${1#*=}"
+      ;;
     --backend-host=*)
-    backend_host="${1#*=}"
-    ;;
+      backend_host="${1#*=}"
+      ;;
     -*)
         echo "Unknown option: $1"
         print_help
@@ -42,8 +42,8 @@ case "$1" in
         print_help
         exit 2
         ;;
-esac
-shift
+  esac
+  shift
 done
 
 test_summary_report_path="${test_result_path%jtl}xml"
@@ -53,7 +53,7 @@ mkdir -p "${test_result_path%/*}"
 rm -rf "$test_report_dir"
 mkdir -p "$test_report_dir"
 jmeter --nongui --testfile "$test_scenario_path" --logfile "$test_result_path" \
---reportatendofloadtests --reportoutputfolder "$test_report_dir" \
---jmeterproperty backend.port="$backend_port" --jmeterproperty backend.host="$backend_host" \
---jmeterproperty thread.count="$test_thread_count" --jmeterproperty loop.count="$test_loop_count" \
---jmeterproperty summary.report.path="$test_summary_report_path"
+  --reportatendofloadtests --reportoutputfolder "$test_report_dir" \
+  --jmeterproperty backend.port="$backend_port" --jmeterproperty backend.host="$backend_host" \
+  --jmeterproperty thread.count="$test_thread_count" --jmeterproperty loop.count="$test_loop_count" \
+  --jmeterproperty summary.report.path="$test_summary_report_path"
