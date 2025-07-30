@@ -97,6 +97,8 @@ POSTGRES_ACCESS=${POSTGRES_URL:-"postgresql://$POSTGRES_USER@$POSTGRES_HOST:$POS
   psql "$POSTGRES_ACCESS" -v ON_ERROR_STOP=on -c "SET SEARCH_PATH TO ${REPTRACKER_SCHEMA};" -f "$SRCPATH/scripts/set_version_in_sql.pgsql"
   psql "$POSTGRES_ACCESS" -v ON_ERROR_STOP=on  -c "SET ROLE reptracker_owner;GRANT USAGE ON SCHEMA ${REPTRACKER_SCHEMA} to reptracker_user;"
   psql "$POSTGRES_ACCESS" -v ON_ERROR_STOP=on  -c "SET ROLE reptracker_owner;GRANT USAGE ON SCHEMA reptracker_endpoints to reptracker_user;"
+  psql "$POSTGRES_ACCESS" -v ON_ERROR_STOP=on  -c "SET ROLE reptracker_owner;GRANT USAGE ON SCHEMA reptracker_backend to reptracker_user;"
   psql "$POSTGRES_ACCESS" -v ON_ERROR_STOP=on  -c "SET ROLE reptracker_owner;GRANT SELECT ON ALL TABLES IN SCHEMA ${REPTRACKER_SCHEMA} TO reptracker_user;"
   psql "$POSTGRES_ACCESS" -v ON_ERROR_STOP=on  -c "SET ROLE reptracker_owner;GRANT SELECT ON ALL TABLES IN SCHEMA reptracker_endpoints TO reptracker_user;"
+  psql "$POSTGRES_ACCESS" -v ON_ERROR_STOP=on  -c "SET ROLE reptracker_owner;GRANT SELECT ON ALL TABLES IN SCHEMA reptracker_backend TO reptracker_user;"
 

@@ -49,38 +49,34 @@ $$
 DECLARE
     _rep BIGINT;
     _result INT;
-    _account_id INT = (SELECT av.id FROM hive.accounts_view av WHERE av.name = "account-name");
+    _account_id INT := reptracker_backend.get_account_id("account-name", TRUE);
 BEGIN
-IF _account_id IS NULL THEN
-  PERFORM rest_raise_missing_account("account-name");
-END IF;
+  PERFORM set_config('response.headers', '[{"Cache-Control": "public, max-age=2"}]', true);
 
-PERFORM set_config('response.headers', '[{"Cache-Control": "public, max-age=2"}]', true);
+  SELECT ar.reputation INTO _rep
+  FROM account_reputations ar
+  WHERE ar.account_id = _account_id;
 
-SELECT ar.reputation INTO _rep
-FROM account_reputations ar
-WHERE ar.account_id = _account_id;
+  IF _rep = 0 OR _rep IS NULL THEN
+      RETURN 0;
+  ELSE
+      WITH log_account_rep AS MATERIALIZED
+      (
+          SELECT 
+              LOG(10, ABS(_rep)) AS rep,
+              (CASE WHEN _rep < 0 THEN -1 ELSE 1 END) AS is_neg 
+      ),
+      calculate_rep AS MATERIALIZED
+      (
+          SELECT GREATEST(lar.rep - 9, 0) * lar.is_neg AS rep
+          FROM log_account_rep lar
+      )
+          SELECT ((cr.rep * 9) + 25)::INT INTO _result
+          FROM calculate_rep cr;
 
-IF _rep = 0 OR _rep IS NULL THEN
-    RETURN 0;
-ELSE
-    WITH log_account_rep AS MATERIALIZED
-    (
-        SELECT 
-            LOG(10, ABS(_rep)) AS rep,
-            (CASE WHEN _rep < 0 THEN -1 ELSE 1 END) AS is_neg 
-    ),
-    calculate_rep AS MATERIALIZED
-    (
-        SELECT GREATEST(lar.rep - 9, 0) * lar.is_neg AS rep
-        FROM log_account_rep lar
-    )
-        SELECT ((cr.rep * 9) + 25)::INT INTO _result
-        FROM calculate_rep cr;
+      RETURN _result;
 
-    RETURN _result;
-
-END IF;
+  END IF;
 
 END
 $$;
