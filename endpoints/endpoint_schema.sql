@@ -32,6 +32,7 @@ BEGIN
   __swagger_url := current_setting('custom.swagger_url')::TEXT;
 
 CREATE SCHEMA IF NOT EXISTS reptracker_endpoints AUTHORIZATION reptracker_owner;
+CREATE SCHEMA IF NOT EXISTS reptracker_backend AUTHORIZATION reptracker_owner;
 
 EXECUTE FORMAT(
 'create or replace function reptracker_endpoints.root() returns json as $_$
