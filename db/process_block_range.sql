@@ -27,7 +27,7 @@ WITH vote_operations AS (
     ov.op_type_id,
     ov.id AS source_op
   FROM operations_view ov
-  CROSS JOIN process_vote_impacting_operations(ov.body, ov.op_type_id) AS effective_votes
+  CROSS JOIN reptracker_backend.process_vote_impacting_operations(ov.body, ov.op_type_id) AS effective_votes
   WHERE ov.op_type_id IN (72, 17, 61)
   AND ov.block_num BETWEEN _first_block_num AND _last_block_num 
 ),
@@ -137,7 +137,7 @@ check_if_prev_balances_canceled AS (
 ---------------------------------------------------------------------------------------
 rep_change AS (
   SELECT
-    calculate_account_reputations(
+    reptracker_backend.calculate_account_reputations(
       uv.author_id,
       uv.voter_id,
       uv.rshares, 
