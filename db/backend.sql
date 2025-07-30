@@ -1,7 +1,7 @@
 SET ROLE reptracker_owner;
 
-DROP TYPE IF EXISTS effective_vote_return CASCADE;
-CREATE TYPE effective_vote_return AS
+DROP TYPE IF EXISTS reptracker_backend.effective_vote_return CASCADE;
+CREATE TYPE reptracker_backend.effective_vote_return AS
 (
     author TEXT,
     voter TEXT,
@@ -9,8 +9,8 @@ CREATE TYPE effective_vote_return AS
     rshares BIGINT
 );
 
-CREATE OR REPLACE FUNCTION process_vote_impacting_operations(IN _operation_body JSONB, IN _op_type_id INT)
-RETURNS effective_vote_return
+CREATE OR REPLACE FUNCTION reptracker_backend.process_vote_impacting_operations(IN _operation_body JSONB, IN _op_type_id INT)
+RETURNS reptracker_backend.effective_vote_return
 LANGUAGE plpgsql
 STABLE
 AS
@@ -19,10 +19,10 @@ BEGIN
   RETURN (
     CASE 
       WHEN _op_type_id = 72 THEN
-        process_effective_vote_operation(_operation_body)
+        reptracker_backend.process_effective_vote_operation(_operation_body)
 
       ELSE
-        process_deleted_comment_operation(_operation_body)
+        reptracker_backend.process_deleted_comment_operation(_operation_body)
     END
   );
 
@@ -30,8 +30,8 @@ END;
 $BODY$;
 
 --72
-CREATE OR REPLACE FUNCTION process_effective_vote_operation(IN _operation_body JSONB)
-RETURNS effective_vote_return
+CREATE OR REPLACE FUNCTION reptracker_backend.process_effective_vote_operation(IN _operation_body JSONB)
+RETURNS reptracker_backend.effective_vote_return
 LANGUAGE 'plpgsql' STABLE
 AS
 $$
@@ -50,14 +50,14 @@ BEGIN
           NULL::BIGINT
         END
     ) 
-  )::effective_vote_return;
+  )::reptracker_backend.effective_vote_return;
   
 END
 $$;
 
 --17,61
-CREATE OR REPLACE FUNCTION process_deleted_comment_operation(IN _operation_body JSONB)
-RETURNS effective_vote_return
+CREATE OR REPLACE FUNCTION reptracker_backend.process_deleted_comment_operation(IN _operation_body JSONB)
+RETURNS reptracker_backend.effective_vote_return
 LANGUAGE 'plpgsql' STABLE
 AS
 $$
@@ -67,12 +67,12 @@ BEGIN
     NULL,
     ((_operation_body)->'value'->>'permlink')::TEXT,
     NULL
-  )::effective_vote_return;
+  )::reptracker_backend.effective_vote_return;
   
 END
 $$;
 
-CREATE OR REPLACE FUNCTION calculate_account_reputations(
+CREATE OR REPLACE FUNCTION reptracker_backend.calculate_account_reputations(
     _author_id INT,
     _voter_id INT,
     _rshares BIGINT,
