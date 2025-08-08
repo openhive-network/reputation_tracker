@@ -7,3 +7,7 @@ set_version_in_sql.pgsql
 accounts_dump.json
 endpoints_openapi
 build
+
+# Python API client generation
+scripts/python_api_package/reputation_api/*
+scripts/python_api_package/dist/
