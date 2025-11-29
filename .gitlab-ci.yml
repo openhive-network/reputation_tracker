@@ -145,6 +145,7 @@ prepare_haf_data:
     CONFIG_INI_SOURCE: "$CI_PROJECT_DIR/haf/docker/config_5M.ini"
   tags:
   - data-cache-storage
+  - hive-builder-9
 
 .docker-build-template:
   extends: .docker_image_builder_job_template
@@ -294,6 +295,7 @@ sync:
     when: always
   tags:
   - data-cache-storage
+  - hive-builder-9
 
 .hfm-only-service: &hfm-only-service
   name: $HAF_IMAGE_NAME
@@ -364,6 +366,7 @@ regression-test:
     when: always
   tags:
   - data-cache-storage
+  - hive-builder-9
 
 setup-scripts-test:
   image: registry.gitlab.syncad.com/hive/reputation_tracker/ci-runner:docker-24.0.1-3
@@ -389,6 +392,7 @@ setup-scripts-test:
     echo -e "\e[0Ksection_end:$(date +%s):tests\r\e[0K"
   tags:
   - data-cache-storage
+  - hive-builder-9
 
 performance-test:
   image: registry.gitlab.syncad.com/hive/reputation_tracker/ci-runner:docker-24.0.1-3
@@ -425,6 +429,7 @@ performance-test:
       junit: tests/performance/junit-result.xml
   tags:
   - data-cache-storage
+  - hive-builder-9
 
 pattern-test:
   extends: .pytest_based_template
@@ -456,6 +461,7 @@ pattern-test:
     - "**/*.out.json"
   tags:
   - data-cache-storage
+  - hive-builder-9
 
 deploy_python_api_packages_to_gitlab:
   stage: publish
@@ -522,3 +528,4 @@ cleanup_haf_cache_manual:
     CLEANUP_PATH_PATTERN: "${DATA_CACHE_HAF_PREFIX}_*"
   tags:
   - data-cache-storage
+  - hive-builder-9
