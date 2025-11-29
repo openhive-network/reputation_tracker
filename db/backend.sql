@@ -126,7 +126,7 @@ END IF;
 IF _voter_reputation >= 0 AND (_rshares >= 0 OR (_rshares < 0 AND NOT _voter_is_implicit AND _voter_reputation > _author_reputation)) THEN
 
   _is_changed := TRUE;
-  _author_reputation = _author_reputation + (_rshares >> 6)::BIGINT;
+  _author_reputation := _author_reputation + (_rshares >> 6)::BIGINT;
   _author_is_implicit := false;
 
 END IF;
