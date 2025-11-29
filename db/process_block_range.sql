@@ -18,6 +18,15 @@ DECLARE
   __upsert_votes INT;
   __vote_rec RECORD;
 BEGIN
+-- Create temp table to materialize votes for sequential processing
+CREATE TEMP TABLE IF NOT EXISTS _votes_to_process (
+  author_id INT,
+  voter_id INT,
+  rshares BIGINT,
+  prev_rshares BIGINT,
+  source_op BIGINT
+) ON COMMIT DROP;
+TRUNCATE _votes_to_process;
 ---------------------------------------------------------------------------------------
 WITH vote_operations AS (
   SELECT 
@@ -136,12 +145,6 @@ check_if_prev_balances_canceled AS (
   FROM find_prev_votes_in_table ja
 ),
 ---------------------------------------------------------------------------------------
--- Use cursor to guarantee sequential processing order for deterministic results
-votes_to_process AS (
-  SELECT author_id, voter_id, rshares, prev_rshares, source_op
-  FROM check_if_prev_balances_canceled
-  ORDER BY source_op
-),
 delete_votes AS (
   DELETE FROM active_votes av
   USING join_permlink_id_to_deletes dp
@@ -152,42 +155,49 @@ delete_votes AS (
   RETURNING av.author_id, av.permlink_serial_id
 ),
 upsert_votes AS (
-  INSERT INTO active_votes AS av 
+  INSERT INTO active_votes AS av
     (author_id, voter_id, permlink_serial_id, rshares)
-  SELECT 
+  SELECT
     author_id,
     voter_id,
     permlink_id,
     rshares
   FROM ranked_data uv
-  WHERE 
-    uv.row_num = 1 AND 
+  WHERE
+    uv.row_num = 1 AND
     uv.op_type_id = 72 AND
     NOT EXISTS (
-      SELECT NULL 
-      FROM join_permlink_id_to_deletes dv 
+      SELECT NULL
+      FROM join_permlink_id_to_deletes dv
       WHERE dv.author_id = uv.author_id AND dv.permlink_id = uv.permlink_id AND dv.source_op > uv.source_op
       LIMIT 1
     )
   ON CONFLICT ON CONSTRAINT pk_active_votes DO UPDATE SET
     rshares = EXCLUDED.rshares
   RETURNING av.author_id, av.voter_id, av.permlink_serial_id
+),
+-- Materialize votes data into temp table for sequential processing
+materialize_votes AS (
+  INSERT INTO _votes_to_process (author_id, voter_id, rshares, prev_rshares, source_op)
+  SELECT author_id, voter_id, rshares, prev_rshares, source_op
+  FROM check_if_prev_balances_canceled
+  RETURNING 1
 )
 
 SELECT
-  (SELECT count(*) FROM delete_votes) AS delete_votes,
-  (SELECT count(*) FROM upsert_votes) AS upsert_votes
-INTO __delete_votes, __upsert_votes;
+  (SELECT count(*) FROM delete_votes),
+  (SELECT count(*) FROM upsert_votes),
+  (SELECT count(*) FROM materialize_votes)
+INTO __delete_votes, __upsert_votes, __rep_change;
 
 -- Process reputation changes sequentially using cursor to guarantee order
-FOR __vote_rec IN (SELECT * FROM votes_to_process) LOOP
+FOR __vote_rec IN (SELECT * FROM _votes_to_process ORDER BY source_op) LOOP
   PERFORM reptracker_backend.calculate_account_reputations(
     __vote_rec.author_id,
     __vote_rec.voter_id,
     __vote_rec.rshares,
     __vote_rec.prev_rshares
   );
-  __rep_change := __rep_change + 1;
 END LOOP;
 
 END
