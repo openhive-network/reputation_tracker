@@ -13,9 +13,10 @@ SET join_collapse_limit = 16
 SET jit = OFF
 AS $BODY$
 DECLARE
-  __rep_change INT;
+  __rep_change INT := 0;
   __delete_votes INT;
   __upsert_votes INT;
+  __vote_rec RECORD;
 BEGIN
 ---------------------------------------------------------------------------------------
 WITH vote_operations AS (
@@ -135,16 +136,11 @@ check_if_prev_balances_canceled AS (
   FROM find_prev_votes_in_table ja
 ),
 ---------------------------------------------------------------------------------------
-rep_change AS (
-  SELECT
-    reptracker_backend.calculate_account_reputations(
-      uv.author_id,
-      uv.voter_id,
-      uv.rshares, 
-      uv.prev_rshares
-    )
-  FROM check_if_prev_balances_canceled uv
-  ORDER BY uv.source_op
+-- Use cursor to guarantee sequential processing order for deterministic results
+votes_to_process AS (
+  SELECT author_id, voter_id, rshares, prev_rshares, source_op
+  FROM check_if_prev_balances_canceled
+  ORDER BY source_op
 ),
 delete_votes AS (
   DELETE FROM active_votes av
@@ -179,10 +175,20 @@ upsert_votes AS (
 )
 
 SELECT
-  (SELECT count(*) FROM rep_change) AS rep_change,
   (SELECT count(*) FROM delete_votes) AS delete_votes,
   (SELECT count(*) FROM upsert_votes) AS upsert_votes
-INTO __rep_change, __delete_votes, __upsert_votes;
+INTO __delete_votes, __upsert_votes;
+
+-- Process reputation changes sequentially using cursor to guarantee order
+FOR __vote_rec IN (SELECT * FROM votes_to_process) LOOP
+  PERFORM reptracker_backend.calculate_account_reputations(
+    __vote_rec.author_id,
+    __vote_rec.voter_id,
+    __vote_rec.rshares,
+    __vote_rec.prev_rshares
+  );
+  __rep_change := __rep_change + 1;
+END LOOP;
 
 END
 $BODY$;
