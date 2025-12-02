@@ -82,6 +82,7 @@ prepare_haf_image:
   tags:
   - public-runner-docker
   - hived-for-tests
+  - hived
 
 extract-swagger-json:
   extends: .filter_out_swagger_json
@@ -188,6 +189,7 @@ prepare_haf_data:
   tags:
   - public-runner-docker
   - hived-for-tests
+  - hived
 
 docker-ci-runner-build:
   extends: .docker-build-template
