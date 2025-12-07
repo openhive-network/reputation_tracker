@@ -502,8 +502,9 @@ pattern-test:
     REPTRACKER_ADDRESS: postgrest-server
     REPTRACKER_PORT: 3000
     TAVERN_DIR: $CI_PROJECT_DIR/tests/tavern
-  before_script: *ensure-sync-data
+  # Note: Don't override before_script - template's poetry install runs pytest setup
   script:
+  - *ensure-sync-data
   - |
     cd $CI_PROJECT_DIR/tests/tavern
     pytest -n $PYTEST_NUMBER_OF_PROCESSES --junitxml report.xml .
