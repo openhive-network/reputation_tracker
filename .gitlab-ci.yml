@@ -31,12 +31,12 @@ variables:
   BUILDER_IMAGE_PATH: "registry.gitlab.syncad.com/hive/haf/ci-base-image${BUILDER_IMAGE_TAG}"
   # HAF submodule commit - must match the 'ref:' in the include section below
   # This is needed for service containers which can't access dotenv artifacts
-  HAF_COMMIT: "7a753d87a712ba333705b7732a76a151cd0d44ae"
+  HAF_COMMIT: "0457b5ffebdff0cf9067b8a770af9512c6a869c9"
 
 include:
 - template: Workflows/Branch-Pipelines.gitlab-ci.yml
 - project: hive/haf
-  ref: 7a753d87a712ba333705b7732a76a151cd0d44ae # develop (with NFS cache-manager)
+  ref: 0457b5ffebdff0cf9067b8a770af9512c6a869c9 # feature/nfs-cache-manager (with chmod fix)
   file: /scripts/ci-helpers/prepare_data_image_job.yml
 
 .lint_job:
