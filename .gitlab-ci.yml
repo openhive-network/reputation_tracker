@@ -308,6 +308,13 @@ sync:
 
     "${CI_PROJECT_DIR}/haf/scripts/copy_datadir.sh"
 
+    # Fix pgdata ownership - use explicit UID 105 (postgres in HAF container)
+    # The copy_datadir.sh uses 'postgres:postgres' which may resolve to different UIDs on different systems
+    if [[ -d "${DATADIR}/haf_db_store" ]]; then
+      echo "Fixing haf_db_store ownership to UID 105:109 (postgres in HAF container)"
+      sudo chown -R 105:109 "${DATADIR}/haf_db_store"
+    fi
+
     "${CI_PROJECT_DIR}/scripts/ci-helpers/start-ci-test-environment.sh"
 
     echo -e "\e[0Ksection_end:$(date +%s):compose\r\e[0K"
