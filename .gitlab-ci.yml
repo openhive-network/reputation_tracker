@@ -375,8 +375,7 @@ sync:
     when: always
   tags:
   - data-cache-storage
-  # Pin to builder-9 so pattern-test (also on builder-9) can use local cache
-  - hive-builder-9
+  - fast
 
 # HAF instance with NFS fallback for sync data
 # Services start before before_script, so we need fallback logic in the entrypoint
@@ -572,8 +571,7 @@ pattern-test:
     - "**/*.out.json"
   tags:
   - data-cache-storage
-  # Pin to same builder as sync to avoid NFS copy timeout during service startup
-  - hive-builder-9
+  - fast
 
 deploy_python_api_packages_to_gitlab:
   stage: publish
