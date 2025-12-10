@@ -416,14 +416,27 @@ sync:
       if [[ ! -d "${ORIGINAL_SOURCE}/datadir" ]]; then
         echo "Local cache not found: ${ORIGINAL_SOURCE}/datadir"
         NFS_PATH="${NFS_PREFIX}/${NFS_TYPE}/${NFS_KEY}"
+        NFS_TAR="${NFS_PATH}.tar"
 
         if [[ -d "${NFS_PATH}/datadir" ]]; then
-          echo "Found data on NFS: $NFS_PATH"
+          echo "Found data on NFS directory: $NFS_PATH"
           export DATA_SOURCE="$NFS_PATH"
+        elif [[ -f "${NFS_TAR}" ]]; then
+          echo "Found NFS tar archive: $NFS_TAR"
+          echo "Extracting to: ${ORIGINAL_SOURCE}"
+          mkdir -p "${ORIGINAL_SOURCE}"
+          tar xf "${NFS_TAR}" -C "${ORIGINAL_SOURCE}"
+          # Restore pgdata permissions for PostgreSQL
+          if [[ -d "${ORIGINAL_SOURCE}/datadir/haf_db_store/pgdata" ]]; then
+            chmod 700 "${ORIGINAL_SOURCE}/datadir/haf_db_store/pgdata"
+          fi
+          echo "Extracted NFS cache successfully"
+          export DATA_SOURCE="${ORIGINAL_SOURCE}"
         else
           echo "WARNING: Data not found in local or NFS cache"
           echo "Checked: ${ORIGINAL_SOURCE}/datadir"
           echo "Checked: ${NFS_PATH}/datadir"
+          echo "Checked: ${NFS_TAR}"
         fi
       else
         echo "Using local cache: ${ORIGINAL_SOURCE}"
