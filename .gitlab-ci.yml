@@ -308,11 +308,18 @@ sync:
 
     "${CI_PROJECT_DIR}/haf/scripts/copy_datadir.sh"
 
-    # Fix pgdata ownership - use explicit UID 105 (postgres in HAF container)
+    # Fix pgdata ownership and permissions - use explicit UID 105 (postgres in HAF container)
     # The copy_datadir.sh uses 'postgres:postgres' which may resolve to different UIDs on different systems
+    # PostgreSQL also requires pgdata to have mode 700 or 750
     if [[ -d "${DATADIR}/haf_db_store" ]]; then
       echo "Fixing haf_db_store ownership to UID 105:109 (postgres in HAF container)"
       sudo chown -R 105:109 "${DATADIR}/haf_db_store"
+      sudo chown -R 105:109 "${DATADIR}/haf_postgresql_conf.d"
+      # Fix pgdata permissions - PostgreSQL requires 700 or 750
+      if [[ -d "${DATADIR}/haf_db_store/pgdata" ]]; then
+        echo "Fixing pgdata permissions to 700"
+        sudo chmod 700 "${DATADIR}/haf_db_store/pgdata"
+      fi
     fi
 
     "${CI_PROJECT_DIR}/scripts/ci-helpers/start-ci-test-environment.sh"
