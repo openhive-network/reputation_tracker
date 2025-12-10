@@ -426,9 +426,13 @@ sync:
           echo "Extracting to: ${ORIGINAL_SOURCE}"
           mkdir -p "${ORIGINAL_SOURCE}"
           tar xf "${NFS_TAR}" -C "${ORIGINAL_SOURCE}"
-          # Restore pgdata permissions for PostgreSQL
-          if [[ -d "${ORIGINAL_SOURCE}/datadir/haf_db_store/pgdata" ]]; then
-            chmod 700 "${ORIGINAL_SOURCE}/datadir/haf_db_store/pgdata"
+          # Restore pgdata ownership and permissions for PostgreSQL
+          # PostgreSQL requires pgdata to be owned by postgres (UID 105) with mode 700
+          if [[ -d "${ORIGINAL_SOURCE}/datadir/haf_db_store" ]]; then
+            echo "Fixing PostgreSQL data permissions..."
+            sudo chown -R 105:109 "${ORIGINAL_SOURCE}/datadir/haf_db_store"
+            sudo chown -R 105:109 "${ORIGINAL_SOURCE}/datadir/haf_postgresql_conf.d" 2>/dev/null || true
+            sudo chmod 700 "${ORIGINAL_SOURCE}/datadir/haf_db_store/pgdata"
           fi
           echo "Extracted NFS cache successfully"
           export DATA_SOURCE="${ORIGINAL_SOURCE}"
