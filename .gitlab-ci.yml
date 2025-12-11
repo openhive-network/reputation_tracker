@@ -367,6 +367,21 @@ sync:
     if [[ -x "$CACHE_MANAGER" ]]; then
       echo "Pushing sync data to NFS cache: ${SYNC_CACHE_TYPE}/${SYNC_CACHE_KEY}"
       "$CACHE_MANAGER" put "${SYNC_CACHE_TYPE}" "${SYNC_CACHE_KEY}" "${LOCAL_SYNC_CACHE}" || echo "Warning: Failed to push to NFS cache"
+
+      # Also extract to directory format for service containers that can't use tar
+      # Service containers expect DATA_SOURCE/datadir to be a directory, not a tar file
+      NFS_TAR_FILE="/nfs/ci-cache/${SYNC_CACHE_TYPE}/${SYNC_CACHE_KEY}.tar"
+      NFS_CACHE_DIR="/nfs/ci-cache/${SYNC_CACHE_TYPE}/${SYNC_CACHE_KEY}"
+      if [[ -f "$NFS_TAR_FILE" && ! -d "${NFS_CACHE_DIR}/datadir" ]]; then
+        echo "Extracting tar to directory format for service containers: ${NFS_CACHE_DIR}"
+        mkdir -p "$NFS_CACHE_DIR"
+        chmod 777 "$NFS_CACHE_DIR" 2>/dev/null || true
+        tar xf "$NFS_TAR_FILE" -C "$NFS_CACHE_DIR"
+        chmod -R a+rX "$NFS_CACHE_DIR" 2>/dev/null || true
+        chmod 777 "${NFS_CACHE_DIR}/datadir" 2>/dev/null || true
+        echo "Extracted successfully"
+        ls -la "$NFS_CACHE_DIR"
+      fi
     else
       echo "Warning: cache-manager.sh not found, skipping NFS cache push"
     fi
