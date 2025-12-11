@@ -384,8 +384,7 @@ sync:
   - data-cache-storage
   - fast
 
-# HAF instance with NFS fallback for sync data
-# Services start before before_script, so we need fallback logic in the entrypoint
+# HAF instance with NFS fallback for sync data via copy_datadir.sh
 .haf-instance-with-nfs-fallback: &haf-instance-with-nfs-fallback
   name: ${HAF_IMAGE_NAME}
   alias: haf-instance
@@ -397,58 +396,7 @@ sync:
       "host    all              reptracker_user       0.0.0.0/0    trust"
       "host    all              reptracker_owner      0.0.0.0/0    trust"
       "host    all              all              0.0.0.0/0    scram-sha-256"
-    DATA_SOURCE: "${DATA_CACHE_HAF_PREFIX}_${SYNC_CACHE_KEY}"
-    DATA_SOURCE_NFS_PREFIX: "${DATA_CACHE_NFS_PREFIX}"
-    DATA_SOURCE_NFS_TYPE: "${SYNC_CACHE_TYPE}"
-    DATA_SOURCE_NFS_KEY: "${SYNC_CACHE_KEY}"
-  entrypoint:
-    - '/bin/bash'
-    - '-c'
-    - |
-      set -xeuo pipefail
-      echo "Checking data source availability..."
-      ORIGINAL_SOURCE="${DATA_SOURCE}"
-      NFS_PREFIX="${DATA_SOURCE_NFS_PREFIX:-/nfs/ci-cache}"
-      NFS_TYPE="${DATA_SOURCE_NFS_TYPE:-haf_sync}"
-      NFS_KEY="${DATA_SOURCE_NFS_KEY}"
-
-      # If original path doesn't exist, try NFS fallback
-      if [[ ! -d "${ORIGINAL_SOURCE}/datadir" ]]; then
-        echo "Local cache not found: ${ORIGINAL_SOURCE}/datadir"
-        NFS_PATH="${NFS_PREFIX}/${NFS_TYPE}/${NFS_KEY}"
-        NFS_TAR="${NFS_PATH}.tar"
-
-        if [[ -d "${NFS_PATH}/datadir" ]]; then
-          echo "Found data on NFS directory: $NFS_PATH"
-          export DATA_SOURCE="$NFS_PATH"
-        elif [[ -f "${NFS_TAR}" ]]; then
-          echo "Found NFS tar archive: $NFS_TAR"
-          echo "Extracting to: ${ORIGINAL_SOURCE}"
-          mkdir -p "${ORIGINAL_SOURCE}"
-          tar xf "${NFS_TAR}" -C "${ORIGINAL_SOURCE}"
-          # Restore pgdata ownership and permissions for PostgreSQL
-          # PostgreSQL requires pgdata to be owned by postgres (UID 105) with mode 700
-          if [[ -d "${ORIGINAL_SOURCE}/datadir/haf_db_store" ]]; then
-            echo "Fixing PostgreSQL data permissions..."
-            sudo chown -R 105:109 "${ORIGINAL_SOURCE}/datadir/haf_db_store"
-            sudo chown -R 105:109 "${ORIGINAL_SOURCE}/datadir/haf_postgresql_conf.d" 2>/dev/null || true
-            sudo chmod 700 "${ORIGINAL_SOURCE}/datadir/haf_db_store/pgdata"
-          fi
-          echo "Extracted NFS cache successfully"
-          export DATA_SOURCE="${ORIGINAL_SOURCE}"
-        else
-          echo "WARNING: Data not found in local or NFS cache"
-          echo "Checked: ${ORIGINAL_SOURCE}/datadir"
-          echo "Checked: ${NFS_PATH}/datadir"
-          echo "Checked: ${NFS_TAR}"
-        fi
-      else
-        echo "Using local cache: ${ORIGINAL_SOURCE}"
-      fi
-
-      # Run original entrypoint
-      exec /home/haf_admin/docker_entrypoint.sh "$@"
-    - '/bin/bash'
+    DATA_SOURCE: "/cache/${SYNC_CACHE_TYPE}_${SYNC_CACHE_KEY}"
   command: ["--execute-maintenance-script=${HAF_SOURCE_DIR}/scripts/maintenance-scripts/sleep_infinity.sh"]
 
 .postgrest-service: &postgrest-service
