@@ -396,7 +396,7 @@ sync:
       "host    all              reptracker_user       0.0.0.0/0    trust"
       "host    all              reptracker_owner      0.0.0.0/0    trust"
       "host    all              all              0.0.0.0/0    scram-sha-256"
-    DATA_SOURCE: "/cache/${SYNC_CACHE_TYPE}_${SYNC_CACHE_KEY}"
+    DATA_SOURCE: "/nfs/ci-cache/${SYNC_CACHE_TYPE}/${SYNC_CACHE_KEY}"
   command: ["--execute-maintenance-script=${HAF_SOURCE_DIR}/scripts/maintenance-scripts/sleep_infinity.sh"]
 
 .postgrest-service: &postgrest-service
