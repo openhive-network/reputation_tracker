@@ -60,6 +60,6 @@ export POSTGRES_ACCESS
 export COMMAND
 export MESSAGE
 
-timeout -k 1m 10m bash -c wait-for-rt-startup
+timeout -k 1m 55m bash -c wait-for-rt-startup
       
 echo "Block processing is finished."
