@@ -108,8 +108,8 @@ BEGIN
 
 --- Author must have set explicit reputation to allow its correction
 --- Voter must have explicitly set reputation to match hived old conditions
-IF NOT _author_is_implicit AND _voter_reputation >= 0 AND 
-  (_prev_rshares >= 0 OR (_prev_rshares < 0 AND NOT _voter_is_implicit AND _voter_reputation > _author_reputation - (_prev_rshares >> 6)::BIGINT)) THEN
+IF NOT _author_is_implicit AND _voter_reputation >= 0 AND
+  (_prev_rshares >= 0 OR (_prev_rshares < 0 AND NOT _voter_is_implicit)) THEN
 
   _author_reputation := _author_reputation - (_prev_rshares >> 6)::BIGINT;
   _author_is_implicit := _author_reputation = 0;
@@ -123,7 +123,7 @@ IF NOT _author_is_implicit AND _voter_reputation >= 0 AND
 
 END IF;
 
-IF _voter_reputation >= 0 AND (_rshares >= 0 OR (_rshares < 0 AND NOT _voter_is_implicit AND _voter_reputation > _author_reputation)) THEN
+IF _voter_reputation >= 0 AND (_rshares >= 0 OR (_rshares < 0 AND NOT _voter_is_implicit)) THEN
 
   _is_changed := TRUE;
   _author_reputation := _author_reputation + (_rshares >> 6)::BIGINT;
