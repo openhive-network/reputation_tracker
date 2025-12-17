@@ -145,9 +145,9 @@ BEGIN
         IF hive.get_current_stage_name(_context_name) = 'MASSIVE_PROCESSING' THEN
 
           CALL reptracker_massive_processing(_block_range.first_block, _block_range.last_block, _logs);
-          PERFORM hive.app_request_table_vacuum('%s.account_reputations', interval '10 minutes'); 
-          PERFORM hive.app_request_table_vacuum('%s.active_votes', interval '10 minutes'); 
-          PERFORM hive.app_request_table_vacuum('%s.permlinks', interval '100 minutes');
+          PERFORM hive.app_request_table_vacuum('%s', 'account_reputations', interval '10 minutes'); 
+          PERFORM hive.app_request_table_vacuum('%s', 'active_votes', interval '10 minutes'); 
+          PERFORM hive.app_request_table_vacuum('%s', 'permlinks', interval '100 minutes');
           RETURN;
         END IF;
 
