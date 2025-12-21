@@ -17,7 +17,7 @@ variables:
   # Full clone (depth 0) enables efficient incremental fetches - shallow clones
   # don't reduce server CPU and make fetch less effective.
   GIT_STRATEGY: fetch
-  GIT_SUBMODULE_STRATEGY: recursive
+  GIT_SUBMODULE_STRATEGY: normal
   GIT_DEPTH: 0
   GIT_SUBMODULE_DEPTH: 0
   GIT_SUBMODULE_UPDATE_FLAGS: --jobs 4
@@ -50,6 +50,59 @@ include:
   ref: 2fc1e0852ce93e74a026bc94abae268312e8a27a   # develop
   file: /scripts/ci-helpers/prepare_data_image_job.yml
 
+default:
+  hooks:
+    pre_get_sources_script:
+      # Disable recursive submodule fetching - HAF has nested submodules with relative URLs
+      # that cause "transport 'file' not allowed" errors during fetch operations
+      - git config --global fetch.recurseSubmodules false
+      # Clean corrupt git state left by cancelled pipelines (see GitLab #296638, #4600)
+      # Wrapped in subshell to avoid changing working directory for subsequent git operations
+      - |
+        (
+        cd "${CI_PROJECT_DIR:-/builds}" 2>/dev/null || exit 0
+        echo "pre_get_sources: checking $(pwd) for corrupt git state"
+        if [ -d ".git" ]; then
+          # Remove stale lock files that block git operations
+          find .git -name "*.lock" -delete 2>/dev/null || true
+
+          # Check if main repo is corrupt - if so, remove .git to force fresh clone
+          if ! git rev-parse HEAD >/dev/null 2>&1; then
+            echo "pre_get_sources: main repository corrupt, forcing fresh clone"
+            rm -rf .git
+          else
+            # Main repo OK - check and clean corrupt submodules
+            # Check both the working dir and .git/modules/ since either can be corrupt
+            if [ -f ".gitmodules" ]; then
+              git config --file .gitmodules --get-regexp path 2>/dev/null | awk '{print $2}' | while read submod; do
+                needs_clean=false
+                [ -z "$submod" ] && continue
+                # Check if submodule working directory exists but is corrupt
+                if [ -d "$submod" ] && [ -f "$submod/.git" ]; then
+                  if ! git -C "$submod" rev-parse HEAD >/dev/null 2>&1; then
+                    needs_clean=true
+                  fi
+                fi
+                # Check if .git/modules exists but is corrupt (even if working dir is gone)
+                if [ -d ".git/modules/$submod" ]; then
+                  if ! git --git-dir=".git/modules/$submod" rev-parse HEAD >/dev/null 2>&1; then
+                    echo "pre_get_sources: $submod corrupt (rev-parse failed)"
+                    needs_clean=true
+                  fi
+                fi
+                if [ "$needs_clean" = true ]; then
+                  echo "pre_get_sources: cleaning corrupt submodule: $submod"
+                  rm -rf "$submod" ".git/modules/$submod"
+                fi
+              done
+            fi
+            echo "pre_get_sources: existing repo OK"
+          fi
+        else
+          echo "pre_get_sources: no .git directory (fresh workspace)"
+        fi
+        )
+
 .lint_job:
   stage: lint
   variables:
@@ -66,7 +119,8 @@ lint_bash_scripts:
   before_script:
   - apk add xmlstarlet
   script:
-  - find . -name .git -type d -prune -o -type f -name \*.sh -exec shellcheck -f checkstyle
+  # Exclude .git and haf submodule (submodules may be stale from other jobs using fetch strategy)
+  - find . -name .git -type d -prune -o -path ./haf -prune -o -type f -name \*.sh -exec shellcheck -f checkstyle
     {} + | tee shellcheck-checkstyle-result.xml
   after_script:
   - xmlstarlet tr misc/checkstyle2junit.xslt shellcheck-checkstyle-result.xml > shellcheck-junit-result.xml
@@ -273,6 +327,8 @@ sync:
   - docker-setup-docker-image-build
   - docker-ci-runner-build
   variables:
+    # Need recursive for haf/hive submodule (copy_datadir.sh symlink)
+    GIT_SUBMODULE_STRATEGY: recursive
     DATA_SOURCE: ${DATA_CACHE_HAF_PREFIX}_${HAF_COMMIT}
     DATADIR: ${CI_PROJECT_DIR}/${CI_JOB_ID}/datadir
     SHM_DIR: ${CI_PROJECT_DIR}/${CI_JOB_ID}/shm_dir
@@ -676,6 +732,8 @@ pattern-test:
   - job: docker-ci-runner-build
     artifacts: true
   variables:
+    # Need recursive for haf/hive submodule (tests_api dependency)
+    GIT_SUBMODULE_STRATEGY: recursive
     JUNIT_REPORT: $CI_PROJECT_DIR/tests/tavern/report.xml
     REPTRACKER_ADDRESS: docker
     REPTRACKER_PORT: 3000
