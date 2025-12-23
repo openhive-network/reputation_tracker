@@ -40,14 +40,14 @@ variables:
   BUILDER_IMAGE_PATH: "registry.gitlab.syncad.com/hive/haf/ci-base-image${BUILDER_IMAGE_TAG}"
   # HAF submodule commit - must match the 'ref:' in the include section below
   # This is needed for service containers which can't access dotenv artifacts
-  HAF_COMMIT: "2fc1e0852ce93e74a026bc94abae268312e8a27a"
+  HAF_COMMIT: "40987ce53beb6d72005846f9c69b2ee18adafaee"
   # Enable CI-specific PostgreSQL config with reduced memory for HAF service containers
   HAF_CI_MODE: "1"
 
 include:
 - template: Workflows/Branch-Pipelines.gitlab-ci.yml
 - project: hive/haf
-  ref: 2fc1e0852ce93e74a026bc94abae268312e8a27a   # develop
+  ref: 40987ce53beb6d72005846f9c69b2ee18adafaee   # develop
   file: /scripts/ci-helpers/prepare_data_image_job.yml
 
 default:
@@ -732,8 +732,6 @@ pattern-test:
   - job: docker-ci-runner-build
     artifacts: true
   variables:
-    # Need recursive for haf/hive submodule (tests_api dependency)
-    GIT_SUBMODULE_STRATEGY: recursive
     JUNIT_REPORT: $CI_PROJECT_DIR/tests/tavern/report.xml
     REPTRACKER_ADDRESS: docker
     REPTRACKER_PORT: 3000
@@ -741,6 +739,14 @@ pattern-test:
     PYTEST_NUMBER_OF_PROCESSES: 16
   before_script:
   - !reference [.test-with-docker-compose, before_script]
+  - |
+    echo -e "\e[0Ksection_start:$(date +%s):submodules[collapsed=true]\r\e[0KInitializing nested submodules for tests_api..."
+    cd "${CI_PROJECT_DIR}"
+    # Initialize only the specific nested submodules needed for tests_api
+    # Using selective init avoids stale directory conflicts from full recursive init
+    git -C haf submodule update --init hive
+    git -C haf/hive submodule update --init tests/python/hive-local-tools/tests_api
+    echo -e "\e[0Ksection_end:$(date +%s):submodules\r\e[0K"
   - |
     echo -e "\e[0Ksection_start:$(date +%s):venv[collapsed=true]\r\e[0KSetting up Python environment..."
 
