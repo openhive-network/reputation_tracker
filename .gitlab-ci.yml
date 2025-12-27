@@ -38,6 +38,12 @@ variables:
   # uses registry.gitlab.syncad.com/hive/haf/ci-base-image:ubuntu24.04-1
   BUILDER_IMAGE_TAG: "$TEST_HAF_IMAGE_TAG"
   BUILDER_IMAGE_PATH: "registry.gitlab.syncad.com/hive/haf/ci-base-image${BUILDER_IMAGE_TAG}"
+  # Python 3.14 image for API client generation and tests
+  # uses registry.gitlab.syncad.com/hive/hive/ci-base-image:ubuntu24.04-py3.14-1
+  PYTHON_IMAGE_TAG: "@sha256:64bc6a41d7811e6caace5fed8c82ca1ee6c26bfdcae8b29546d830a63bfe1f17"
+  PYTHON_IMAGE: "registry.gitlab.syncad.com/hive/hive/ci-base-image${PYTHON_IMAGE_TAG}"
+  # Python 3.14 compatibility - allow PyO3-based packages to build
+  PYO3_USE_ABI3_FORWARD_COMPATIBILITY: "1"
   # HAF submodule commit - must match the 'ref:' in the include section below
   # This is needed for service containers which can't access dotenv artifacts
   HAF_COMMIT: "7e28069624c4fb7e2524f22279a69fc7dee14083"
