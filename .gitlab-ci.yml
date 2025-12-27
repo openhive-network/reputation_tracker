@@ -205,7 +205,7 @@ extract-swagger-json:
   - public-runner-docker
 
 generate_python_api_client:
-  extends: .project_develop_configuration_template
+  extends: .configuration_template
   stage: build
   variables:
     PYPROJECT_DIR: "${CI_PROJECT_DIR}/scripts/python_api_package"
@@ -213,8 +213,9 @@ generate_python_api_client:
   - job: extract-swagger-json
     artifacts: true
   before_script:
-  - !reference [.project_develop_configuration_template, before_script]
+  - !reference [.configuration_template, before_script]
   - poetry -C "${PYPROJECT_DIR}" lock
+  - poetry -C "${PYPROJECT_DIR}" install
   script:
   - ${PYPROJECT_DIR}/generate_reputation_api_client.sh
   artifacts:
@@ -630,7 +631,7 @@ sync:
   - fast
 
 python_api_client_test:
-  extends: .project_develop_configuration_template
+  extends: .configuration_template
   stage: test
   needs:
   - job: generate_python_api_client
@@ -638,8 +639,9 @@ python_api_client_test:
   variables:
     PYPROJECT_DIR: "${CI_PROJECT_DIR}/scripts/python_api_package"
   before_script:
-  - !reference [.project_develop_configuration_template, before_script]
+  - !reference [.configuration_template, before_script]
   - poetry -C "${PYPROJECT_DIR}" lock
+  - poetry -C "${PYPROJECT_DIR}" install
   script:
   - pytest "${PYPROJECT_DIR}/tests"
   tags:
