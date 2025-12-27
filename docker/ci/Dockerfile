@@ -9,9 +9,8 @@ COPY --from=registry.gitlab.syncad.com/hive/common-ci-configuration/benchmark-te
 USER root
 RUN <<EOF
   # Install system dependencies
-  # Use Python 3.12 from Alpine edge for compatibility with tests_api
-  apk add --no-cache bash ca-certificates openjdk11-jre postgresql-client
-  apk add --no-cache --repository=https://dl-cdn.alpinelinux.org/alpine/edge/main python3 py3-pip
+  # Alpine v3.20 has Python 3.12, which is compatible with tests_api
+  apk add --no-cache bash ca-certificates openjdk11-jre postgresql-client python3 py3-pip
 
   # Create symlinks in bin directory
   ln -s /opt/tools/jmeter/bin/jmeter.sh /usr/bin/jmeter
