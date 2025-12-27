@@ -191,6 +191,8 @@ prepare_haf_image:
     REGISTRY_USER: "$HAF_DEPLOY_USERNAME"
     REGISTRY_PASS: "$HAF_DEPLOY_TOKEN"
     GIT_SUBMODULE_STRATEGY: recursive
+    # Force clean stale submodule directories from previous failed jobs
+    GIT_CLEAN_FLAGS: -ffdx
   before_script:
   - git config --global --add safe.directory $CI_PROJECT_DIR/haf
   - git config --global --add safe.directory $CI_PROJECT_DIR/haf/hive
