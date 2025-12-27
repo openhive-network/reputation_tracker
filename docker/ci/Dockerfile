@@ -1,9 +1,9 @@
 # syntax=registry.gitlab.syncad.com/hive/common-ci-configuration/dockerfile:1.5
-FROM registry.gitlab.syncad.com/hive/common-ci-configuration/docker-builder:7ea99b10bbf0f9b1fbb88f52a78ead4c82f15d75
+FROM registry.gitlab.syncad.com/hive/common-ci-configuration/docker-builder:latest
 
-COPY --from=registry.gitlab.syncad.com/hive/common-ci-configuration/benchmark-test-runner:7ea99b10bbf0f9b1fbb88f52a78ead4c82f15d75 \
+COPY --from=registry.gitlab.syncad.com/hive/common-ci-configuration/benchmark-test-runner:latest \
   --link /opt/tools/jmeter /opt/tools/jmeter
-COPY --from=registry.gitlab.syncad.com/hive/common-ci-configuration/benchmark-test-runner:7ea99b10bbf0f9b1fbb88f52a78ead4c82f15d75 \
+COPY --from=registry.gitlab.syncad.com/hive/common-ci-configuration/benchmark-test-runner:latest \
   --link /opt/tools/m2u /opt/tools/m2u
 
 USER root
