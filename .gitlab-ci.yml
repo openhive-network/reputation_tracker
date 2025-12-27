@@ -212,6 +212,9 @@ generate_python_api_client:
   needs:
   - job: extract-swagger-json
     artifacts: true
+  before_script:
+  - !reference [.project_develop_configuration_template, before_script]
+  - poetry -C "${PYPROJECT_DIR}" lock
   script:
   - ${PYPROJECT_DIR}/generate_reputation_api_client.sh
   artifacts:
@@ -634,6 +637,9 @@ python_api_client_test:
     artifacts: true
   variables:
     PYPROJECT_DIR: "${CI_PROJECT_DIR}/scripts/python_api_package"
+  before_script:
+  - !reference [.project_develop_configuration_template, before_script]
+  - poetry -C "${PYPROJECT_DIR}" lock
   script:
   - pytest "${PYPROJECT_DIR}/tests"
   tags:
