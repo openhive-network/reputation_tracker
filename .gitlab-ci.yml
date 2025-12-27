@@ -317,7 +317,7 @@ docker-ci-runner-build:
   extends: .docker-build-template
   variables:
     BASE_REPO_NAME: ""
-    BASE_TAG: "docker-24.0.1-4"
+    BASE_TAG: "docker-24.0.1-5"
     NAME: "ci-runner"
     TARGET: "ci-runner-ci"
   tags:
@@ -338,7 +338,7 @@ docker-setup-docker-image-build:
 sync:
   extends: .docker_image_builder_job_template
   stage: sync
-  image: registry.gitlab.syncad.com/hive/reputation_tracker/ci-runner:docker-24.0.1-4
+  image: registry.gitlab.syncad.com/hive/reputation_tracker/ci-runner:docker-24.0.1-5
   needs:
   - prepare_haf_image
   - prepare_haf_data
@@ -504,7 +504,7 @@ sync:
 # 2. Starting containers via docker-compose (after extraction)
 .test-with-docker-compose:
   extends: .docker_image_builder_job_template
-  image: registry.gitlab.syncad.com/hive/reputation_tracker/ci-runner:docker-24.0.1-4
+  image: registry.gitlab.syncad.com/hive/reputation_tracker/ci-runner:docker-24.0.1-5
   variables:
     HAF_DATA_DIRECTORY: ${CI_PROJECT_DIR}/${CI_JOB_ID}/datadir
     HAF_SHM_DIRECTORY: ${CI_PROJECT_DIR}/${CI_JOB_ID}/shm_dir
