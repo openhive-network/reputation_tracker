@@ -1,15 +1,17 @@
 from __future__ import annotations
 
-from pydantic import HttpUrl
-from beekeepy._remote_handle import AbstractAsyncHandle, RemoteHandleSettings, AsyncBatchHandle
-from beekeepy._runnable_handle.settings import Settings
+from beekeepy._communication.url import HttpUrl
+from beekeepy._remote_handle.abc.handle import AbstractAsyncHandle
+from beekeepy._remote_handle.abc.batch_handle import AsyncBatchHandle
+from beekeepy._remote_handle.settings import RemoteHandleSettings
+from beekeepy._runnable_handle.settings import RunnableHandleSettings
 
 from tests.api_collection import ReputationApiCollection
 
 
 class ReputationApiCaller(AbstractAsyncHandle[RemoteHandleSettings, ReputationApiCollection]):
     def __init__(self, endpoint_url: HttpUrl) -> None:
-        settings = Settings()
+        settings = RunnableHandleSettings()
         settings.http_endpoint = endpoint_url
         super().__init__(settings=settings)
 

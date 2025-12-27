@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from typing import Final
 
-from tests.api_caller import ReputationApiCaller
-
 from beekeepy._communication.url import HttpUrl
+
+from tests.api_caller import ReputationApiCaller
 
 DEFAULT_ENDPOINT_FOR_TESTS: Final[HttpUrl] = HttpUrl("https://api.syncad.com")
 SEARCHED_ACCOUNT_IN_TESTS: Final[str] = "gtg"

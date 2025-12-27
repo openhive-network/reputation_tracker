@@ -654,8 +654,6 @@ python_api_client_test:
   - pytest "${PYPROJECT_DIR}/tests"
   tags:
   - public-runner-docker
-  # TODO: Update tests to use new beekeepy Python 3.14 API
-  allow_failure: true
 
 regression-test:
   extends: .test-with-docker-compose
