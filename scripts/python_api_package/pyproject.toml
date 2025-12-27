@@ -28,7 +28,7 @@ source = [
 [tool.poetry.dependencies]
 python = "^3.14"
 hiveio-beekeepy = "1.28.4.dev7+c04687a"
-api_client_generator = "1.7.1.dev4+6fe5c3e"
+api_client_generator = "1.7.1.dev1+285429f"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "8.3.5"
