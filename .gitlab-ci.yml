@@ -581,7 +581,8 @@ sync:
     chmod +x "$CACHE_MANAGER"
 
     echo "Pushing sync data to NFS cache: ${REPTRACKER_SYNC_CACHE_TYPE}/${REPTRACKER_CACHE_KEY}"
-    CACHE_HANDLING=haf "$CACHE_MANAGER" put "${REPTRACKER_SYNC_CACHE_TYPE}" "${REPTRACKER_CACHE_KEY}" "${LOCAL_REPTRACKER_CACHE}" || echo "Warning: Failed to push to NFS cache"
+    # Note: Not using CACHE_HANDLING=haf for reptracker_sync - HAF-specific chmod causes hangs
+    "$CACHE_MANAGER" put "${REPTRACKER_SYNC_CACHE_TYPE}" "${REPTRACKER_CACHE_KEY}" "${LOCAL_REPTRACKER_CACHE}" || echo "Warning: Failed to push to NFS cache"
 
     echo -e "\e[0Ksection_end:$(date +%s):save_cache\r\e[0K"
   after_script:
@@ -631,7 +632,8 @@ sync:
 
     # Use cache-manager to get data (handles local cache check + NFS tar extraction)
     mkdir -p "${JOB_DIR}"
-    if CACHE_HANDLING=haf "$CACHE_MANAGER" get "${REPTRACKER_SYNC_CACHE_TYPE}" "${REPTRACKER_CACHE_KEY}" "${JOB_DIR}"; then
+    # Note: Not using CACHE_HANDLING=haf for reptracker_sync
+    if "$CACHE_MANAGER" get "${REPTRACKER_SYNC_CACHE_TYPE}" "${REPTRACKER_CACHE_KEY}" "${JOB_DIR}"; then
       echo "Cache extraction complete"
     else
       echo "ERROR: Failed to get cache via cache-manager"
