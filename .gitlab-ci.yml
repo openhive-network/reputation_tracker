@@ -302,12 +302,14 @@ prepare_haf_image:
     GIT_SUBMODULE_STRATEGY: recursive
     # Use fresh clone to avoid stale submodule state from previous jobs
     GIT_STRATEGY: clone
-  rules:
-    # Skip when only docs/tests changed (uses cached image)
-    - if: $AUTO_SKIP_BUILD == "true"
-      when: never
-    - when: on_success
   before_script:
+  - |
+    # Early exit if only docs/tests changed
+    if [ "${AUTO_SKIP_BUILD:-false}" = "true" ]; then
+      echo "=== Skipping prepare_haf_image (AUTO_SKIP_BUILD=true) ==="
+      echo "Using cached HAF image from previous build"
+      exit 0
+    fi
   - git config --global --add safe.directory $CI_PROJECT_DIR/haf
   - git config --global --add safe.directory $CI_PROJECT_DIR/haf/hive
   tags:
@@ -376,18 +378,15 @@ prepare_haf_data:
   - job: detect_changes
     artifacts: true
   - job: prepare_haf_image
-    artifacts: true
+    optional: true  # Can be skipped when AUTO_SKIP_BUILD=true
   stage: build
   timeout: 80m
   variables:
     SUBMODULE_DIR: "$CI_PROJECT_DIR/haf"
     BLOCK_LOG_SOURCE_DIR: $BLOCK_LOG_SOURCE_DIR_5M
     CONFIG_INI_SOURCE: "$CI_PROJECT_DIR/haf/docker/config_5M.ini"
-  rules:
-    # Skip when only docs/tests changed (uses cached data)
-    - if: $AUTO_SKIP_BUILD == "true"
-      when: never
-    - when: on_success
+  # Note: The .prepare_haf_data_5m template already has caching logic
+  # that skips replay if data exists. No additional skip logic needed.
   tags:
   - data-cache-storage
   - fast
