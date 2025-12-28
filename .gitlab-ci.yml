@@ -469,6 +469,8 @@ sync:
   - docker-setup-docker-image-build
   - docker-ci-runner-build
   variables:
+    # Use clone strategy to avoid stale submodule state from fetch strategy
+    GIT_STRATEGY: clone
     # Need recursive for haf/hive submodule (copy_datadir.sh symlink)
     GIT_SUBMODULE_STRATEGY: recursive
     DATA_SOURCE: ${DATA_CACHE_HAF_PREFIX}_${HAF_COMMIT}
