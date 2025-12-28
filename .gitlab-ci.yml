@@ -292,9 +292,6 @@ validate_haf_commit:
 prepare_haf_image:
   stage: build
   extends: .prepare_haf_image
-  needs:
-  - job: detect_changes
-    artifacts: true
   variables:
     SUBMODULE_DIR: "$CI_PROJECT_DIR/haf"
     REGISTRY_USER: "$HAF_DEPLOY_USERNAME"
@@ -303,13 +300,6 @@ prepare_haf_image:
     # Use fresh clone to avoid stale submodule state from previous jobs
     GIT_STRATEGY: clone
   before_script:
-  - |
-    # Early exit if only docs/tests changed
-    if [ "${AUTO_SKIP_BUILD:-false}" = "true" ]; then
-      echo "=== Skipping prepare_haf_image (AUTO_SKIP_BUILD=true) ==="
-      echo "Using cached HAF image from previous build"
-      exit 0
-    fi
   - git config --global --add safe.directory $CI_PROJECT_DIR/haf
   - git config --global --add safe.directory $CI_PROJECT_DIR/haf/hive
   tags:
