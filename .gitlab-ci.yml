@@ -583,6 +583,11 @@ sync:
 
     echo "Pushing sync data to NFS cache: ${NFS_TAR_FILE}"
     if [[ ! -f "$NFS_TAR_FILE" ]]; then
+      # Relax pgdata permissions so tar can read files owned by postgres (UID 105)
+      echo "Relaxing pgdata permissions for archive..."
+      sudo chmod -R a+rX "${LOCAL_REPTRACKER_CACHE}/datadir/haf_db_store" 2>/dev/null || true
+      sudo chmod -R a+rX "${LOCAL_REPTRACKER_CACHE}/datadir/haf_postgresql_conf.d" 2>/dev/null || true
+
       tar cf "${NFS_TAR_FILE}.tmp" -C "${LOCAL_REPTRACKER_CACHE}" .
       mv "${NFS_TAR_FILE}.tmp" "$NFS_TAR_FILE"
       echo "Cache saved successfully"
