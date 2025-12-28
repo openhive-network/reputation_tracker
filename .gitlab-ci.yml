@@ -580,8 +580,13 @@ sync:
     curl -fsSL "https://gitlab.syncad.com/hive/common-ci-configuration/-/raw/develop/scripts/cache-manager.sh" -o "$CACHE_MANAGER"
     chmod +x "$CACHE_MANAGER"
 
+    # Relax pgdata permissions for caching (PostgreSQL creates mode 700)
+    # cache-manager only auto-relaxes for cache_type=="haf", but we use "reptracker_sync"
+    sudo chmod -R a+rX "${LOCAL_REPTRACKER_CACHE}/datadir/haf_db_store/pgdata" 2>/dev/null || true
+    sudo chmod -R a+rX "${LOCAL_REPTRACKER_CACHE}/datadir/haf_db_store/tablespace" 2>/dev/null || true
+
     echo "Pushing sync data to NFS cache: ${REPTRACKER_SYNC_CACHE_TYPE}/${REPTRACKER_CACHE_KEY}"
-    CACHE_HANDLING=haf "$CACHE_MANAGER" put "${REPTRACKER_SYNC_CACHE_TYPE}" "${REPTRACKER_CACHE_KEY}" "${LOCAL_REPTRACKER_CACHE}" || echo "Warning: Failed to push to NFS cache"
+    "$CACHE_MANAGER" put "${REPTRACKER_SYNC_CACHE_TYPE}" "${REPTRACKER_CACHE_KEY}" "${LOCAL_REPTRACKER_CACHE}" || echo "Warning: Failed to push to NFS cache"
 
     echo -e "\e[0Ksection_end:$(date +%s):save_cache\r\e[0K"
   after_script:
