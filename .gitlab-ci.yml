@@ -9,7 +9,7 @@ stages:
 
 variables:
   # Variables required by Common CI jobs
-  CI_COMMON_JOB_VERSION: "9f5e12cd984bf12746ce9af081868e09ced8068f"
+  CI_COMMON_JOB_VERSION: "89c514c36cd840851e4d35e13302e719d86400fc"
   DOCKER_BUILDER_TAG: "$CI_COMMON_JOB_VERSION"
   DOCKER_DIND_TAG: "$CI_COMMON_JOB_VERSION"
   IMAGE_REMOVER_TAG: "$CI_COMMON_JOB_VERSION"
@@ -575,25 +575,13 @@ sync:
     ls -lah "${LOCAL_REPTRACKER_CACHE}/datadir/shm_dir" || ls -lah "${LOCAL_REPTRACKER_CACHE}/shm_dir" || true
 
     # Push sync data to NFS cache for sharing across builders
-    # Note: Using direct tar instead of cache-manager because BusyBox flock in DinD
-    # doesn't support NFS locking ("Bad file descriptor" error)
-    NFS_TAR_DIR="/nfs/ci-cache/${REPTRACKER_SYNC_CACHE_TYPE}"
-    NFS_TAR_FILE="${NFS_TAR_DIR}/${REPTRACKER_CACHE_KEY}.tar"
-    mkdir -p "$NFS_TAR_DIR"
+    # Fetch cache-manager from common-ci-configuration
+    CACHE_MANAGER="/tmp/cache-manager.sh"
+    curl -fsSL "https://gitlab.syncad.com/hive/common-ci-configuration/-/raw/develop/scripts/cache-manager.sh" -o "$CACHE_MANAGER"
+    chmod +x "$CACHE_MANAGER"
 
-    echo "Pushing sync data to NFS cache: ${NFS_TAR_FILE}"
-    if [[ ! -f "$NFS_TAR_FILE" ]]; then
-      # Relax pgdata permissions so tar can read files owned by postgres (UID 105)
-      echo "Relaxing pgdata permissions for archive..."
-      sudo chmod -R a+rX "${LOCAL_REPTRACKER_CACHE}/datadir/haf_db_store" 2>/dev/null || true
-      sudo chmod -R a+rX "${LOCAL_REPTRACKER_CACHE}/datadir/haf_postgresql_conf.d" 2>/dev/null || true
-
-      tar cf "${NFS_TAR_FILE}.tmp" -C "${LOCAL_REPTRACKER_CACHE}" .
-      mv "${NFS_TAR_FILE}.tmp" "$NFS_TAR_FILE"
-      echo "Cache saved successfully"
-    else
-      echo "Cache already exists, skipping"
-    fi
+    echo "Pushing sync data to NFS cache: ${REPTRACKER_SYNC_CACHE_TYPE}/${REPTRACKER_CACHE_KEY}"
+    CACHE_HANDLING=haf "$CACHE_MANAGER" put "${REPTRACKER_SYNC_CACHE_TYPE}" "${REPTRACKER_CACHE_KEY}" "${LOCAL_REPTRACKER_CACHE}" || echo "Warning: Failed to push to NFS cache"
 
     echo -e "\e[0Ksection_end:$(date +%s):save_cache\r\e[0K"
   after_script:
@@ -636,18 +624,17 @@ sync:
     echo "DEBUG: CACHE_TYPE=${REPTRACKER_SYNC_CACHE_TYPE}"
     echo "DEBUG: CACHE_KEY=${REPTRACKER_CACHE_KEY}"
 
-    # Extract sync data from NFS cache
-    # Note: Using direct tar instead of cache-manager because BusyBox flock in DinD
-    # doesn't support NFS locking ("Bad file descriptor" error)
-    NFS_TAR_FILE="/nfs/ci-cache/${REPTRACKER_SYNC_CACHE_TYPE}/${REPTRACKER_CACHE_KEY}.tar"
-    mkdir -p "${JOB_DIR}"
+    # Fetch cache-manager from common-ci-configuration
+    CACHE_MANAGER="/tmp/cache-manager.sh"
+    curl -fsSL "https://gitlab.syncad.com/hive/common-ci-configuration/-/raw/develop/scripts/cache-manager.sh" -o "$CACHE_MANAGER"
+    chmod +x "$CACHE_MANAGER"
 
-    if [[ -f "$NFS_TAR_FILE" ]]; then
-      echo "Extracting cache from: $NFS_TAR_FILE"
-      tar xf "$NFS_TAR_FILE" -C "${JOB_DIR}"
+    # Use cache-manager to get data (handles local cache check + NFS tar extraction)
+    mkdir -p "${JOB_DIR}"
+    if CACHE_HANDLING=haf "$CACHE_MANAGER" get "${REPTRACKER_SYNC_CACHE_TYPE}" "${REPTRACKER_CACHE_KEY}" "${JOB_DIR}"; then
       echo "Cache extraction complete"
     else
-      echo "ERROR: Cache file not found: $NFS_TAR_FILE"
+      echo "ERROR: Failed to get cache via cache-manager"
       exit 1
     fi
 
