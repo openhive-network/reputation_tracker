@@ -10,7 +10,8 @@ USER root
 RUN <<EOF
   # Install system dependencies
   # Alpine v3.20 has Python 3.12, which is compatible with tests_api
-  apk add --no-cache bash ca-certificates openjdk11-jre postgresql-client python3 py3-pip py3-psycopg2
+  # util-linux provides flock with NFS support (BusyBox flock fails on NFS)
+  apk add --no-cache bash ca-certificates openjdk11-jre postgresql-client python3 py3-pip py3-psycopg2 util-linux
 
   # Create symlinks in bin directory
   ln -s /opt/tools/jmeter/bin/jmeter.sh /usr/bin/jmeter
