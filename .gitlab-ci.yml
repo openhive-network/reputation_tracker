@@ -1,4 +1,5 @@
 stages:
+- detect
 - lint
 - build
 - sync
@@ -49,6 +50,25 @@ variables:
   HAF_COMMIT: "7559639514d53f8b7e644a61fb2172468427abf9"
   # Enable CI-specific PostgreSQL config with reduced memory for HAF service containers
   HAF_CI_MODE: "1"
+  # =============================================================================
+  # QUICK TEST MODE
+  # =============================================================================
+  # Two ways to skip heavy jobs and use cached HAF data:
+  #
+  # 1. AUTOMATIC: When only tests/docs/SQL change, heavy jobs are skipped
+  #    and cached HAF data is used. No configuration needed.
+  #
+  # 2. MANUAL: Set QUICK_TEST=true to force skip mode with a specific cache:
+  #    - QUICK_TEST=true
+  #    - QUICK_TEST_HAF_COMMIT=<sha>  (required - find with list-haf-caches.sh)
+  #
+  # Find available caches: ssh hive-builder-10 'ls -lt /nfs/ci-cache/haf/*.tar | head -5'
+  # =============================================================================
+  QUICK_TEST: "false"
+  QUICK_TEST_HAF_COMMIT: ""   # Required when QUICK_TEST=true
+  # Auto-populated by detect_changes job:
+  AUTO_SKIP_BUILD: "false"    # Set to true when only tests/docs/SQL changed
+  AUTO_CACHE_COMMIT: ""       # Most recent cached HAF commit
 
 include:
 - template: Workflows/Branch-Pipelines.gitlab-ci.yml
@@ -108,6 +128,92 @@ default:
           echo "pre_get_sources: no .git directory (fresh workspace)"
         fi
         )
+
+# =============================================================================
+# DETECT CHANGES - Determines if heavy jobs can be skipped
+# =============================================================================
+detect_changes:
+  stage: detect
+  image: alpine:latest
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  tags:
+  - public-runner-docker
+  rules:
+    # Skip for tags (always do full build for releases)
+    - if: $CI_COMMIT_TAG
+      when: never
+    - when: on_success
+  script:
+    - |
+      apk add --no-cache git
+
+      # Initialize defaults
+      CAN_SKIP_BUILD=false
+      CACHE_COMMIT=""
+
+      # Handle manual QUICK_TEST mode
+      if [ "$QUICK_TEST" = "true" ]; then
+        echo "=== Manual QUICK_TEST Mode ==="
+        CAN_SKIP_BUILD=true
+        CACHE_COMMIT="${QUICK_TEST_HAF_COMMIT}"
+        if [ -z "$CACHE_COMMIT" ]; then
+          echo "ERROR: QUICK_TEST_HAF_COMMIT must be set when QUICK_TEST=true"
+          echo ""
+          echo "Find available caches:"
+          echo "  ssh hive-builder-10 'ls -lt /nfs/ci-cache/haf/*.tar | head -5'"
+          exit 1
+        fi
+        echo "Using cached HAF data from: $CACHE_COMMIT"
+      else
+        # Automatic detection mode
+        echo "=== Detecting Changed Files ==="
+
+        # Get changed files based on pipeline type
+        if [ -n "${CI_MERGE_REQUEST_DIFF_BASE_SHA:-}" ]; then
+          BASE_SHA="$CI_MERGE_REQUEST_DIFF_BASE_SHA"
+          echo "MR pipeline: comparing against target branch"
+        elif [ "${CI_PIPELINE_SOURCE:-}" = "push" ]; then
+          BASE_SHA="HEAD~1"
+          echo "Push pipeline: comparing against previous commit"
+        else
+          BASE_SHA=$(git merge-base HEAD origin/develop 2>/dev/null || echo "HEAD~1")
+          echo "Other pipeline: comparing against develop"
+        fi
+
+        echo "Comparing $BASE_SHA to HEAD"
+        CHANGED_FILES=$(git diff --name-only "$BASE_SHA" HEAD 2>/dev/null || git diff --name-only HEAD~1 HEAD)
+
+        echo "Changed files:"
+        echo "$CHANGED_FILES" | head -30
+
+        # Skip patterns: tests, docs, markdown files
+        SKIP_BUILD_PATTERNS="^tests/|^docs/|\.md$|^README|^CHANGELOG|^LICENSE|^\.gitlab-ci\.yml$"
+
+        NEEDS_BUILD=$(echo "$CHANGED_FILES" | grep -vE "$SKIP_BUILD_PATTERNS" || true)
+
+        if [ -z "$NEEDS_BUILD" ]; then
+          CAN_SKIP_BUILD=true
+          echo ""
+          echo "=== Can skip heavy jobs (only tests/docs/CI changed) ==="
+        else
+          echo ""
+          echo "=== Full build required ==="
+          echo "Files requiring build:"
+          echo "$NEEDS_BUILD" | head -10
+        fi
+      fi
+
+      # Export results
+      echo "AUTO_SKIP_BUILD=$CAN_SKIP_BUILD" >> detect_changes.env
+      echo "AUTO_CACHE_COMMIT=$CACHE_COMMIT" >> detect_changes.env
+
+      echo ""
+      echo "=== Detection Results ==="
+      cat detect_changes.env
+  artifacts:
+    reports:
+      dotenv: detect_changes.env
 
 .lint_job:
   stage: lint
@@ -186,6 +292,9 @@ validate_haf_commit:
 prepare_haf_image:
   stage: build
   extends: .prepare_haf_image
+  needs:
+  - job: detect_changes
+    artifacts: true
   variables:
     SUBMODULE_DIR: "$CI_PROJECT_DIR/haf"
     REGISTRY_USER: "$HAF_DEPLOY_USERNAME"
@@ -193,6 +302,11 @@ prepare_haf_image:
     GIT_SUBMODULE_STRATEGY: recursive
     # Use fresh clone to avoid stale submodule state from previous jobs
     GIT_STRATEGY: clone
+  rules:
+    # Skip when only docs/tests changed (uses cached image)
+    - if: $AUTO_SKIP_BUILD == "true"
+      when: never
+    - when: on_success
   before_script:
   - git config --global --add safe.directory $CI_PROJECT_DIR/haf
   - git config --global --add safe.directory $CI_PROJECT_DIR/haf/hive
@@ -259,6 +373,8 @@ generate-wax-spec:
 prepare_haf_data:
   extends: .prepare_haf_data_5m
   needs:
+  - job: detect_changes
+    artifacts: true
   - job: prepare_haf_image
     artifacts: true
   stage: build
@@ -267,6 +383,11 @@ prepare_haf_data:
     SUBMODULE_DIR: "$CI_PROJECT_DIR/haf"
     BLOCK_LOG_SOURCE_DIR: $BLOCK_LOG_SOURCE_DIR_5M
     CONFIG_INI_SOURCE: "$CI_PROJECT_DIR/haf/docker/config_5M.ini"
+  rules:
+    # Skip when only docs/tests changed (uses cached data)
+    - if: $AUTO_SKIP_BUILD == "true"
+      when: never
+    - when: on_success
   tags:
   - data-cache-storage
   - fast
@@ -340,8 +461,12 @@ sync:
   stage: sync
   image: registry.gitlab.syncad.com/hive/reputation_tracker/ci-runner:docker-24.0.1-6
   needs:
-  - prepare_haf_image
-  - prepare_haf_data
+  - job: detect_changes
+    artifacts: true
+  - job: prepare_haf_image
+    optional: true  # Skip when only docs/tests changed
+  - job: prepare_haf_data
+    optional: true  # Skip when only docs/tests changed
   - docker-setup-docker-image-build
   - docker-ci-runner-build
   variables:
