@@ -46,14 +46,14 @@ variables:
   PYO3_USE_ABI3_FORWARD_COMPATIBILITY: "1"
   # HAF submodule commit - must match the 'ref:' in the include section below
   # This is needed for service containers which can't access dotenv artifacts
-  HAF_COMMIT: "7e28069624c4fb7e2524f22279a69fc7dee14083"
+  HAF_COMMIT: "7559639514d53f8b7e644a61fb2172468427abf9"
   # Enable CI-specific PostgreSQL config with reduced memory for HAF service containers
   HAF_CI_MODE: "1"
 
 include:
 - template: Workflows/Branch-Pipelines.gitlab-ci.yml
 - project: hive/haf
-  ref: 7e28069624c4fb7e2524f22279a69fc7dee14083   # develop
+  ref: 7559639514d53f8b7e644a61fb2172468427abf9   # develop
   file: /scripts/ci-helpers/prepare_data_image_job.yml
 
 default:
