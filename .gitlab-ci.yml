@@ -9,7 +9,7 @@ stages:
 
 variables:
   # Variables required by Common CI jobs
-  CI_COMMON_JOB_VERSION: "89c514c36cd840851e4d35e13302e719d86400fc"
+  CI_COMMON_JOB_VERSION: "3dd346380da7f28cdaf3ef3955559c905d94bd1c"
   DOCKER_BUILDER_TAG: "$CI_COMMON_JOB_VERSION"
   DOCKER_DIND_TAG: "$CI_COMMON_JOB_VERSION"
   IMAGE_REMOVER_TAG: "$CI_COMMON_JOB_VERSION"
@@ -47,7 +47,7 @@ variables:
   PYO3_USE_ABI3_FORWARD_COMPATIBILITY: "1"
   # HAF submodule commit - must match the 'ref:' in the include section below
   # This is needed for service containers which can't access dotenv artifacts
-  HAF_COMMIT: "7559639514d53f8b7e644a61fb2172468427abf9"
+  HAF_COMMIT: "1ac5d12439b9cca33e6db383adc59967cae75fc4"
   # Enable CI-specific PostgreSQL config with reduced memory for HAF service containers
   HAF_CI_MODE: "1"
   # =============================================================================
@@ -73,7 +73,7 @@ variables:
 include:
 - template: Workflows/Branch-Pipelines.gitlab-ci.yml
 - project: hive/haf
-  ref: 7559639514d53f8b7e644a61fb2172468427abf9   # develop
+  ref: 1ac5d12439b9cca33e6db383adc59967cae75fc4   # develop
   file: /scripts/ci-helpers/prepare_data_image_job.yml
 
 default:
@@ -493,7 +493,7 @@ sync:
       CACHE_MANAGER="/tmp/cache-manager.sh"
       curl -fsSL "https://gitlab.syncad.com/hive/common-ci-configuration/-/raw/develop/scripts/cache-manager.sh" -o "$CACHE_MANAGER"
       chmod +x "$CACHE_MANAGER"
-      if CACHE_HANDLING=haf "$CACHE_MANAGER" get haf "${HAF_COMMIT}" "${LOCAL_HAF_CACHE}"; then
+      if "$CACHE_MANAGER" get haf "${HAF_COMMIT}" "${LOCAL_HAF_CACHE}"; then
         echo "Fetched HAF replay data from NFS cache"
       else
         echo "ERROR: Failed to fetch HAF replay data from NFS cache"
@@ -636,7 +636,7 @@ sync:
 
     # Use cache-manager to get data (handles local cache check + NFS tar extraction)
     mkdir -p "${JOB_DIR}"
-    if CACHE_HANDLING=haf "$CACHE_MANAGER" get "${REPTRACKER_SYNC_CACHE_TYPE}" "${REPTRACKER_CACHE_KEY}" "${JOB_DIR}"; then
+    if "$CACHE_MANAGER" get "${REPTRACKER_SYNC_CACHE_TYPE}" "${REPTRACKER_CACHE_KEY}" "${JOB_DIR}"; then
       echo "Cache extraction complete"
     else
       echo "ERROR: Failed to get cache via cache-manager"
