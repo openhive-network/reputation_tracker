@@ -784,9 +784,9 @@ pattern-test:
   - |
     cd "${CI_PROJECT_DIR}"
     . venv/bin/activate
-    cd "${TAVERN_DIR}"
-    # In DinD, PostgREST is available at 'docker' host
-    REPTRACKER_ADDRESS=docker pytest -n ${PYTEST_WORKERS} --junitxml report.xml .
+    # Run pytest from project root so validate_response can write to correct paths
+    # (validate_response writes to paths like tests/tavern/get_reputation/file.out.json)
+    REPTRACKER_ADDRESS=docker pytest -n ${PYTEST_WORKERS} --junitxml "${TAVERN_DIR}/report.xml" "${TAVERN_DIR}"
   artifacts:
     paths:
     - "**/*.out.json"
