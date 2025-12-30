@@ -782,10 +782,18 @@ pattern-test:
     pip install -e "${CI_PROJECT_DIR}/haf/hive/tests/python/hive-local-tools/tests_api"
   script:
   - |
+    cd "${CI_PROJECT_DIR}"
     . venv/bin/activate
     cd "${TAVERN_DIR}"
-    REPTRACKER_ADDRESS=docker pytest -n ${PYTEST_WORKERS} --junitxml "${JUNIT_REPORT}" .
-  artifacts: !reference [.tavern_test_artifacts, artifacts]
+    # In DinD, PostgREST is available at 'docker' host
+    REPTRACKER_ADDRESS=docker pytest -n ${PYTEST_WORKERS} --junitxml report.xml .
+  artifacts:
+    paths:
+    - "**/*.out.json"
+    - docker/container-logs.tar.gz
+    reports:
+      junit: tests/tavern/report.xml
+    when: always
 
 deploy_python_api_packages_to_gitlab:
   stage: publish
