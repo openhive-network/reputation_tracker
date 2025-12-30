@@ -354,7 +354,9 @@ docker-setup-docker-image-build:
   - public-runner-docker
 
 sync:
-  extends: .docker_image_builder_job_template
+  extends:
+  - .docker_image_builder_job_template
+  - .haf_app_sync_variables
   stage: sync
   image: registry.gitlab.syncad.com/hive/reputation_tracker/ci-runner:docker-24.0.1-8
   needs:
@@ -372,135 +374,35 @@ sync:
     # Need recursive for haf/hive submodule (copy_datadir.sh symlink)
     GIT_SUBMODULE_STRATEGY: recursive
     DATA_SOURCE: ${DATA_CACHE_HAF_PREFIX}_${HAF_COMMIT}
-    DATADIR: ${CI_PROJECT_DIR}/${CI_JOB_ID}/datadir
-    SHM_DIR: ${CI_PROJECT_DIR}/${CI_JOB_ID}/shm_dir
-    HAF_DATA_DIRECTORY: ${DATADIR}
-    HAF_SHM_DIRECTORY: ${SHM_DIR}
     BACKEND_VERSION: "$CI_COMMIT_SHORT_SHA"
     POSTGRES_ACCESS: postgresql://haf_admin@docker:5432/haf_block_log
     COMPOSE_OPTIONS_STRING: --env-file ci.env --file docker-compose.yml --file overrides/dev.yml
       --ansi never
+    # Aliases for sync templates
+    APP_SYNC_CACHE_TYPE: "${REPTRACKER_SYNC_CACHE_TYPE}"
+    APP_CACHE_KEY: "${REPTRACKER_CACHE_KEY}"
   timeout: 1 hours
   before_script:
-  - |
-    echo -e "\e[0Ksection_start:$(date +%s):login[collapsed=true]\r\e[0KLogging to Docker registry..."
-    docker login -u "$CI_REGISTRY_USER" -p "$CI_REGISTRY_PASSWORD" $CI_REGISTRY
-    echo -e "\e[0Ksection_end:$(date +%s):login\r\e[0K"
-    echo -e "\e[0Ksection_start:$(date +%s):git[collapsed=true]\r\e[0KConfiguring Git..."
-    git config --global --add safe.directory "$CI_PROJECT_DIR"
-    git config --global --add safe.directory "$CI_PROJECT_DIR/haf"
-    echo -e "\e[0Ksection_end:$(date +%s):git\r\e[0K"
-  - |
-    # Ensure HAF replay data is available locally (fetch from NFS if needed)
-    LOCAL_HAF_CACHE="${DATA_CACHE_HAF_PREFIX}_${HAF_COMMIT}"
-    if [[ -d "${LOCAL_HAF_CACHE}/datadir" ]]; then
-      echo "Local HAF cache found at ${LOCAL_HAF_CACHE}"
-    else
-      echo "Local HAF cache not found, fetching from NFS..."
-      # Fetch cache-manager from common-ci-configuration
-      CACHE_MANAGER="/tmp/cache-manager.sh"
-      curl -fsSL "https://gitlab.syncad.com/hive/common-ci-configuration/-/raw/develop/scripts/cache-manager.sh" -o "$CACHE_MANAGER"
-      chmod +x "$CACHE_MANAGER"
-      if "$CACHE_MANAGER" get haf "${HAF_COMMIT}" "${LOCAL_HAF_CACHE}"; then
-        echo "Fetched HAF replay data from NFS cache"
-      else
-        echo "ERROR: Failed to fetch HAF replay data from NFS cache"
-        exit 1
-      fi
-    fi
+  - !reference [.haf_app_sync_setup, script]
+  - !reference [.haf_app_fetch_haf_cache, script]
   script:
+  # Copy blockchain and datadir
+  - !reference [.haf_app_copy_blockchain, script]
+  - !reference [.haf_app_copy_datadir, script]
+  # Start app-specific environment
   - |
-    echo -e "\e[0Ksection_start:$(date +%s):compose[collapsed=true]\r\e[0KStarting the test environment..."
-
-    cp "${BLOCK_LOG_SOURCE_DIR_5M}/block_log" "${CI_PROJECT_DIR}/docker/blockchain/block_log"
-    cp "${BLOCK_LOG_SOURCE_DIR_5M}/block_log.artifacts" "${CI_PROJECT_DIR}/docker/blockchain/block_log.artifacts"
-    chmod a+w docker/blockchain/block_log
-
-    "${CI_PROJECT_DIR}/haf/scripts/copy_datadir.sh"
-
-    # Fix pgdata ownership and permissions - use explicit UID 105 (postgres in HAF container)
-    # The copy_datadir.sh uses 'postgres:postgres' which may resolve to different UIDs on different systems
-    # PostgreSQL also requires pgdata to have mode 700 or 750
-    if [[ -d "${DATADIR}/haf_db_store" ]]; then
-      echo "Fixing haf_db_store ownership to UID 105:109 (postgres in HAF container)"
-      sudo chown -R 105:109 "${DATADIR}/haf_db_store"
-      sudo chown -R 105:109 "${DATADIR}/haf_postgresql_conf.d"
-      # Fix pgdata permissions - PostgreSQL requires 700 or 750
-      if [[ -d "${DATADIR}/haf_db_store/pgdata" ]]; then
-        echo "Fixing pgdata permissions to 700"
-        sudo chmod 700 "${DATADIR}/haf_db_store/pgdata"
-      fi
-    fi
-
+    echo -e "\e[0Ksection_start:$(date +%s):start_env[collapsed=true]\r\e[0KStarting the test environment..."
     "${CI_PROJECT_DIR}/scripts/ci-helpers/start-ci-test-environment.sh"
-
-    echo -e "\e[0Ksection_end:$(date +%s):compose\r\e[0K"
-    echo -e "\e[0Ksection_start:$(date +%s):wait[collapsed=true]\r\e[0K$MESSAGE"
-
+    echo -e "\e[0Ksection_end:$(date +%s):start_env\r\e[0K"
+  - |
+    echo -e "\e[0Ksection_start:$(date +%s):wait[collapsed=true]\r\e[0KWaiting for reputation tracker..."
     "${CI_PROJECT_DIR}/scripts/ci-helpers/wait-for-rt-startup.sh"
-
     echo -e "\e[0Ksection_end:$(date +%s):wait\r\e[0K"
-  - |
-    # Stop environment and save data to NFS (must be in script, not after_script,
-    # so downstream jobs can access the cache via 'needs: sync')
-    echo -e "\e[0Ksection_start:$(date +%s):save_cache[collapsed=true]\r\e[0KSaving sync data to NFS cache..."
-
-    pushd docker
-    IFS=" " read -ra COMPOSE_OPTIONS <<< $COMPOSE_OPTIONS_STRING
-
-    # Force PostgreSQL checkpoint before shutdown to ensure all reptracker data is written to disk
-    # Without this, data may be in WAL files that aren't included in the cache
-    echo "Forcing PostgreSQL checkpoint..."
-    docker compose "${COMPOSE_OPTIONS[@]}" exec -T haf psql -U haf_admin -d haf_block_log -c "CHECKPOINT;" || true
-
-    docker compose "${COMPOSE_OPTIONS[@]}" logs haf > haf.log
-    docker compose "${COMPOSE_OPTIONS[@]}" logs backend-setup > backend-setup.log
-    docker compose "${COMPOSE_OPTIONS[@]}" logs backend-block-processing > backend-block-processing.log
-    docker compose "${COMPOSE_OPTIONS[@]}" logs backend-postgrest > backend-postgrest.log
-
-    # Use longer timeout (60s) for graceful PostgreSQL shutdown
-    docker compose "${COMPOSE_OPTIONS[@]}" down --volumes --timeout 60
-    popd
-
-    tar -czvf docker/container-logs.tar.gz $(pwd)/docker/*.log
-
-    sudo cp -a "${SHM_DIR}" "${DATADIR}/shm_dir"
-    mkdir -p "${DATADIR}/blockchain"
-    sudo cp -a "${CI_PROJECT_DIR}/docker/blockchain/block_log" "${DATADIR}/blockchain/block_log"
-    sudo cp -a "${CI_PROJECT_DIR}/docker/blockchain/block_log.artifacts" "${DATADIR}/blockchain/block_log.artifacts"
-
-    # Save sync data to local cache with commit-based key (not pipeline ID)
-    LOCAL_REPTRACKER_CACHE="${DATA_CACHE_HAF_PREFIX}_${REPTRACKER_CACHE_KEY}"
-    mkdir -p "${LOCAL_REPTRACKER_CACHE}"
-    sudo cp -a "${DATADIR}" "${LOCAL_REPTRACKER_CACHE}"
-
-    ls -lah "${DATADIR}"
-    ls -lah "${DATADIR}/blockchain"
-    ls -lah "${DATADIR}/shm_dir"
-
-    ls -lah "${LOCAL_REPTRACKER_CACHE}"
-    ls -lah "${LOCAL_REPTRACKER_CACHE}/datadir/blockchain" || ls -lah "${LOCAL_REPTRACKER_CACHE}/blockchain" || true
-    ls -lah "${LOCAL_REPTRACKER_CACHE}/datadir/shm_dir" || ls -lah "${LOCAL_REPTRACKER_CACHE}/shm_dir" || true
-
-    # Push sync data to NFS cache for sharing across builders
-    # Fetch cache-manager from common-ci-configuration
-    CACHE_MANAGER="/tmp/cache-manager.sh"
-    curl -fsSL "https://gitlab.syncad.com/hive/common-ci-configuration/-/raw/develop/scripts/cache-manager.sh" -o "$CACHE_MANAGER"
-    chmod +x "$CACHE_MANAGER"
-
-    echo "Pushing sync data to NFS cache: ${REPTRACKER_SYNC_CACHE_TYPE}/${REPTRACKER_CACHE_KEY}"
-    "$CACHE_MANAGER" put "${REPTRACKER_SYNC_CACHE_TYPE}" "${REPTRACKER_CACHE_KEY}" "${LOCAL_REPTRACKER_CACHE}" || echo "Warning: Failed to push to NFS cache"
-
-    echo -e "\e[0Ksection_end:$(date +%s):save_cache\r\e[0K"
-  after_script:
-  - |
-    # Cleanup only - downstream jobs already started, so this is just for disk space
-    sudo rm -rf ${CI_PROJECT_DIR}/${CI_JOB_ID}
-  artifacts:
-    paths:
-    - docker/container-logs.tar.gz
-    expire_in: 1 week
-    when: always
+  # Shutdown and save cache using templates
+  - !reference [.haf_app_sync_shutdown, script]
+  - !reference [.haf_app_sync_save_cache, script]
+  after_script: !reference [.haf_app_sync_cleanup, after_script]
+  artifacts: !reference [.haf_app_sync_artifacts, artifacts]
   tags:
   - data-cache-storage
   - fast
