@@ -30,7 +30,8 @@ variables:
   # NFS cache configuration for sync data sharing across builders
   DATA_CACHE_NFS_PREFIX: "/nfs/ci-cache"
   REPTRACKER_CACHE_KEY: "${HAF_COMMIT}_${CI_COMMIT_SHORT_SHA}"
-  REPTRACKER_SYNC_CACHE_TYPE: "reptracker_sync"
+  # Prefixed with haf_ for automatic pgdata permission handling in cache-manager
+  REPTRACKER_SYNC_CACHE_TYPE: "haf_reptracker_sync"
   # Aliases for .wait-for-haf-postgres-with-nfs-extraction template
   SYNC_CACHE_TYPE: "${REPTRACKER_SYNC_CACHE_TYPE}"
   SYNC_CACHE_KEY: "${REPTRACKER_CACHE_KEY}"
@@ -579,11 +580,6 @@ sync:
     CACHE_MANAGER="/tmp/cache-manager.sh"
     curl -fsSL "https://gitlab.syncad.com/hive/common-ci-configuration/-/raw/develop/scripts/cache-manager.sh" -o "$CACHE_MANAGER"
     chmod +x "$CACHE_MANAGER"
-
-    # Relax pgdata permissions for caching (PostgreSQL creates mode 700)
-    # cache-manager only auto-relaxes for cache_type=="haf", but we use "reptracker_sync"
-    sudo chmod -R a+rX "${LOCAL_REPTRACKER_CACHE}/datadir/haf_db_store/pgdata" 2>/dev/null || true
-    sudo chmod -R a+rX "${LOCAL_REPTRACKER_CACHE}/datadir/haf_db_store/tablespace" 2>/dev/null || true
 
     echo "Pushing sync data to NFS cache: ${REPTRACKER_SYNC_CACHE_TYPE}/${REPTRACKER_CACHE_KEY}"
     "$CACHE_MANAGER" put "${REPTRACKER_SYNC_CACHE_TYPE}" "${REPTRACKER_CACHE_KEY}" "${LOCAL_REPTRACKER_CACHE}" || echo "Warning: Failed to push to NFS cache"
