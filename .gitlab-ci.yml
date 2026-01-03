@@ -192,7 +192,7 @@ prepare_haf_image:
   - git config --global --add safe.directory $CI_PROJECT_DIR/haf/hive
   tags:
   - public-runner-docker
-  - build-mainnet
+  - bigjob
 
 extract-swagger-json:
   extends: .filter_out_swagger_json
@@ -309,7 +309,7 @@ prepare_haf_data:
     echo -e "\e[0Ksection_end:$(date +%s):build\r\e[0K"
   tags:
   - public-runner-docker
-  - build-mainnet
+  - bigjob
 
 docker-ci-runner-build:
   extends: .docker-build-template
@@ -579,7 +579,7 @@ build_and_publish_image:
     fi
   tags:
   - public-runner-docker
-  - build-mainnet
+  - bigjob
 
 deploy-wax-spec-dev-package:
   extends: .npm_deploy_package_template
