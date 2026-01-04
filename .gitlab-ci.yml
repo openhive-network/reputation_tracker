@@ -46,9 +46,8 @@ variables:
   PYTHON_IMAGE: "registry.gitlab.syncad.com/hive/hive/ci-base-image${PYTHON_IMAGE_TAG}"
   # Python 3.14 compatibility - allow PyO3-based packages to build
   PYO3_USE_ABI3_FORWARD_COMPATIBILITY: "1"
-  # HAF submodule commit - must match the 'ref:' in the include section below
-  # This is needed for service containers which can't access dotenv artifacts
-  HAF_COMMIT: "1ac5d12439b9cca33e6db383adc59967cae75fc4"
+  # HAF submodule commit - used for data caching and service containers
+  HAF_COMMIT: "70c30036c6a5d0cb882d05aa22f42523a8f34970"
   # Enable CI-specific PostgreSQL config with reduced memory for HAF service containers
   HAF_CI_MODE: "1"
   # =============================================================================
@@ -76,13 +75,18 @@ variables:
 
 include:
 - template: Workflows/Branch-Pipelines.gitlab-ci.yml
-- project: hive/haf
-  ref: 1ac5d12439b9cca33e6db383adc59967cae75fc4   # develop
-  file: /scripts/ci-helpers/prepare_data_image_job.yml
-# HAF app testing templates from common-ci-configuration
+# All CI templates from common-ci-configuration (Phase 2: direct includes)
 - project: 'hive/common-ci-configuration'
   ref: develop
-  file: '/templates/haf_app_testing.gitlab-ci.yml'
+  file:
+    - '/templates/base.gitlab-ci.yml'
+    - '/templates/docker_image_jobs.gitlab-ci.yml'
+    - '/templates/haf_data_preparation.gitlab-ci.yml'
+    - '/templates/cache_cleanup.gitlab-ci.yml'
+    - '/templates/python_projects.gitlab-ci.yml'
+    - '/templates/npm_projects.gitlab-ci.yml'
+    - '/templates/test_jobs.gitlab-ci.yml'
+    - '/templates/haf_app_testing.gitlab-ci.yml'
 
 default:
   hooks:
@@ -167,8 +171,7 @@ validate_haf_commit:
   extends: .haf_commit_validation
   stage: build
   variables:
-    HAF_COMMIT: "1ac5d12439b9cca33e6db383adc59967cae75fc4"
-    HAF_INCLUDE_REF: "1ac5d12439b9cca33e6db383adc59967cae75fc4"
+    # Uses HAF_COMMIT from global variables - no need to duplicate here
     HAF_SUBMODULE_PATH: "haf"
   tags:
   - public-runner-docker
@@ -494,19 +497,48 @@ sync:
     fi
     echo "reptracker_app schema verified"
 
-    # Wait for PostgREST (if using docker:3000)
+    # Wait for PostgREST
+    # Note: In DinD, there can be DNS resolution inconsistencies between curl and nc.
+    # curl may resolve 'docker' to wrong IP. Use getent to get the correct IP.
+    DOCKER_IP=$(getent hosts docker | awk '{print $1}' | head -1)
+    if [[ -z "$DOCKER_IP" ]]; then
+      # Fallback: try to extract from DOCKER_HOST
+      DOCKER_IP="${DOCKER_HOST:-docker}"
+      DOCKER_IP="${DOCKER_IP#tcp://}"
+      DOCKER_IP="${DOCKER_IP%%:*}"
+    fi
+    echo "Using Docker host IP: $DOCKER_IP for PostgREST connection"
+
     WAITED=0
-    until curl -s http://docker:3000/ > /dev/null 2>&1; do
-      echo "Waiting for PostgREST at docker:3000... ($WAITED/$MAX_WAIT seconds)"
+    echo "Checking PostgREST container status..."
+    docker compose --env-file ci.env "${COMPOSE_OPTIONS[@]}" ps postgrest
+    until curl -s --max-time 5 "http://${DOCKER_IP}:3000/" > /dev/null 2>&1; do
+      echo "Waiting for PostgREST at ${DOCKER_IP}:3000... ($WAITED/$MAX_WAIT seconds)"
+      # Check if container is still running
+      if ! docker compose --env-file ci.env "${COMPOSE_OPTIONS[@]}" ps postgrest 2>/dev/null | grep -q "Up"; then
+        echo "ERROR: PostgREST container is not running"
+        docker compose --env-file ci.env "${COMPOSE_OPTIONS[@]}" logs postgrest | tail -100
+        exit 1
+      fi
       sleep 5
       WAITED=$((WAITED + 5))
       if [[ $WAITED -ge $MAX_WAIT ]]; then
         echo "ERROR: PostgREST did not become ready in time"
-        docker compose --env-file ci.env "${COMPOSE_OPTIONS[@]}" logs postgrest | tail -50
+        echo "Container status:"
+        docker compose --env-file ci.env "${COMPOSE_OPTIONS[@]}" ps
+        echo "PostgREST logs:"
+        docker compose --env-file ci.env "${COMPOSE_OPTIONS[@]}" logs postgrest | tail -100
+        echo "Trying alternative connection methods:"
+        echo "- nc to docker:3000:"
+        nc -zv docker 3000 2>&1 || echo "nc failed"
+        echo "- curl verbose to ${DOCKER_IP}:3000:"
+        curl -v --max-time 5 "http://${DOCKER_IP}:3000/" 2>&1 || echo "curl failed"
         exit 1
       fi
     done
-    echo "PostgREST is ready at docker:3000"
+    echo "PostgREST is ready at ${DOCKER_IP}:3000"
+    # Export for test scripts that need to connect
+    export POSTGREST_HOST="${DOCKER_IP}"
 
     echo -e "\e[0Ksection_end:$(date +%s):wait\r\e[0K"
   after_script:
