@@ -414,16 +414,94 @@ sync:
   - fast
 
 # =============================================================================
-# DinD Test Template (Phase 4 migration)
+# DinD Test Template
 # =============================================================================
-# Uses composable templates from common-ci-configuration instead of inline scripts.
-# This reduces duplication and centralizes maintenance.
+# Custom template with fallback cache extraction logic.
+# The common-ci-configuration template expects exact cache key match, but when
+# sync job finds an existing cache (same HAF commit, different app commit),
+# we need fallback logic to find any compatible cache.
 .test-with-docker-compose:
   extends:
-    - .haf_app_dind_complete_test
+    - .docker_image_builder_job_template
+    - .haf_app_dind_test_variables
+  stage: test
   image: registry.gitlab.syncad.com/hive/reputation_tracker/ci-runner:docker-24.0.1-8
   variables:
     COMPOSE_OPTIONS_STRING: "--file docker-compose-test.yml --ansi never"
+  timeout: 30 minutes
+  before_script:
+    - !reference [.docker_image_builder_job_template, before_script]
+    - |
+      echo -e "\e[0Ksection_start:$(date +%s):login[collapsed=true]\r\e[0KLogging to Docker registry..."
+      docker login -u "$CI_REGISTRY_USER" -p "$CI_REGISTRY_PASSWORD" $CI_REGISTRY
+      echo -e "\e[0Ksection_end:$(date +%s):login\r\e[0K"
+    # Cache extraction with fallback logic
+    - |
+      echo -e "\e[0Ksection_start:$(date +%s):extract[collapsed=true]\r\e[0KExtracting cache for DinD test..."
+      JOB_DIR="${CI_PROJECT_DIR}/${CI_JOB_ID}"
+
+      # Fetch cache-manager
+      if [[ ! -x "$CACHE_MANAGER" ]]; then
+        mkdir -p "$(dirname "$CACHE_MANAGER")"
+        curl -fsSL "https://gitlab.syncad.com/hive/common-ci-configuration/-/raw/${CACHE_MANAGER_REF:-develop}/scripts/cache-manager.sh" -o "$CACHE_MANAGER"
+        chmod +x "$CACHE_MANAGER"
+      fi
+
+      mkdir -p "${JOB_DIR}"
+
+      # Try exact cache key first
+      EXACT_KEY="${HAF_COMMIT}_${CI_COMMIT_SHORT_SHA}"
+      echo "Trying exact cache key: ${APP_SYNC_CACHE_TYPE}/${EXACT_KEY}"
+      if CACHE_HANDLING=haf "$CACHE_MANAGER" get "${APP_SYNC_CACHE_TYPE}" "${EXACT_KEY}" "${JOB_DIR}" 2>/dev/null; then
+        echo "Found exact cache match"
+      else
+        # Fallback: search for any cache with same HAF commit
+        echo "Exact key not found, searching for compatible cache with HAF commit ${HAF_COMMIT}..."
+        NFS_CACHE_DIR="${DATA_CACHE_NFS_PREFIX}/${APP_SYNC_CACHE_TYPE}"
+        FOUND_CACHE=$(ls -t "${NFS_CACHE_DIR}/${HAF_COMMIT}_"*.tar 2>/dev/null | head -1 || true)
+        if [[ -n "$FOUND_CACHE" ]]; then
+          FOUND_KEY=$(basename "$FOUND_CACHE" .tar)
+          echo "Found compatible cache: ${FOUND_KEY}"
+          if ! CACHE_HANDLING=haf "$CACHE_MANAGER" get "${APP_SYNC_CACHE_TYPE}" "${FOUND_KEY}" "${JOB_DIR}"; then
+            echo "ERROR: Failed to extract compatible cache"
+            exit 1
+          fi
+        else
+          echo "ERROR: No compatible cache found in ${NFS_CACHE_DIR}/${HAF_COMMIT}_*.tar"
+          exit 1
+        fi
+      fi
+
+      # Relocate shm_dir from inside datadir to be a sibling (for old cache formats)
+      if [[ -d "${HAF_DATA_DIRECTORY}/shm_dir" ]] && [[ ! -d "${HAF_SHM_DIRECTORY}" ]]; then
+        echo "Relocating shm_dir to parallel location..."
+        mv "${HAF_DATA_DIRECTORY}/shm_dir" "${HAF_SHM_DIRECTORY}"
+      fi
+
+      # Handle blockchain - copy to docker directory
+      mkdir -p "${CI_PROJECT_DIR}/docker/blockchain"
+      if [[ -d "${HAF_DATA_DIRECTORY}/blockchain" ]] && [[ -n "$(ls -A "${HAF_DATA_DIRECTORY}/blockchain" 2>/dev/null)" ]]; then
+        echo "Copying blockchain from cache to docker directory..."
+        cp -aL "${HAF_DATA_DIRECTORY}/blockchain"/* "${CI_PROJECT_DIR}/docker/blockchain/"
+      elif [[ -d "${BLOCK_LOG_SOURCE_DIR_5M}" ]]; then
+        echo "Symlinking blockchain from source..."
+        ln -sfn "${BLOCK_LOG_SOURCE_DIR_5M}/block_log" "${CI_PROJECT_DIR}/docker/blockchain/block_log"
+        ln -sfn "${BLOCK_LOG_SOURCE_DIR_5M}/block_log.artifacts" "${CI_PROJECT_DIR}/docker/blockchain/block_log.artifacts"
+      fi
+      ls -la "${CI_PROJECT_DIR}/docker/blockchain/"
+
+      echo -e "\e[0Ksection_end:$(date +%s):extract\r\e[0K"
+    - !reference [.haf_app_dind_compose_startup, script]
+    - !reference [.haf_app_dind_wait_for_services, script]
+  after_script: !reference [.haf_app_dind_compose_teardown, after_script]
+  artifacts:
+    when: always
+    paths:
+      - docker/container-logs.tar.gz
+    expire_in: 1 week
+  tags:
+    - data-cache-storage
+    - fast
 
 python_api_client_test:
   extends: .configuration_template
