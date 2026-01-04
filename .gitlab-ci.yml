@@ -32,9 +32,10 @@ variables:
   REPTRACKER_CACHE_KEY: "${HAF_COMMIT}_${CI_COMMIT_SHORT_SHA}"
   # Prefixed with haf_ for automatic pgdata permission handling in cache-manager
   REPTRACKER_SYNC_CACHE_TYPE: "haf_reptracker_sync"
-  # Aliases for .wait-for-haf-postgres-with-nfs-extraction template
-  SYNC_CACHE_TYPE: "${REPTRACKER_SYNC_CACHE_TYPE}"
-  SYNC_CACHE_KEY: "${REPTRACKER_CACHE_KEY}"
+  # Aliases for DinD test templates (Phase 4)
+  APP_SYNC_CACHE_TYPE: "${REPTRACKER_SYNC_CACHE_TYPE}"
+  APP_CACHE_KEY: "${REPTRACKER_CACHE_KEY}"
+  HAF_APP_SCHEMA: "reptracker_app"
   BLOCK_LOG_SOURCE_DIR_5M: /blockchain/block_log_5m
   FF_NETWORK_PER_BUILD: 1
   # uses registry.gitlab.syncad.com/hive/haf/ci-base-image:ubuntu24.04-1
@@ -76,8 +77,9 @@ variables:
 include:
 - template: Workflows/Branch-Pipelines.gitlab-ci.yml
 # All CI templates from common-ci-configuration (Phase 2: direct includes)
+# TODO: Change back to 'develop' after MR !150 is merged
 - project: 'hive/common-ci-configuration'
-  ref: develop
+  ref: feat/phase4-dind-test-templates
   file:
     - '/templates/base.gitlab-ci.yml'
     - '/templates/docker_image_jobs.gitlab-ci.yml'
@@ -386,173 +388,17 @@ sync:
   - data-cache-storage
   - fast
 
-# Template for tests using Docker-in-Docker
-# This avoids race conditions with GitLab service containers by:
-# 1. Extracting NFS cache in before_script (before containers start)
-# 2. Starting containers via docker-compose (after extraction)
+# =============================================================================
+# DinD Test Template (Phase 4 migration)
+# =============================================================================
+# Uses composable templates from common-ci-configuration instead of inline scripts.
+# This reduces duplication and centralizes maintenance.
 .test-with-docker-compose:
-  extends: .docker_image_builder_job_template
+  extends:
+    - .haf_app_dind_complete_test
   image: registry.gitlab.syncad.com/hive/reputation_tracker/ci-runner:docker-24.0.1-8
   variables:
-    HAF_DATA_DIRECTORY: ${CI_PROJECT_DIR}/${CI_JOB_ID}/datadir
-    HAF_SHM_DIRECTORY: ${CI_PROJECT_DIR}/${CI_JOB_ID}/shm_dir
-    COMPOSE_OPTIONS_STRING: --file docker-compose-test.yml --ansi never
-  timeout: 30m
-  before_script:
-  - !reference [.docker_image_builder_job_template, before_script]
-  - |
-    echo -e "\e[0Ksection_start:$(date +%s):login[collapsed=true]\r\e[0KLogging to Docker registry..."
-    docker login -u "$CI_REGISTRY_USER" -p "$CI_REGISTRY_PASSWORD" $CI_REGISTRY
-    echo -e "\e[0Ksection_end:$(date +%s):login\r\e[0K"
-  - |
-    echo -e "\e[0Ksection_start:$(date +%s):extract[collapsed=true]\r\e[0KExtracting NFS cache..."
-
-    JOB_DIR="${CI_PROJECT_DIR}/${CI_JOB_ID}"
-
-    echo "DEBUG: JOB_DIR=${JOB_DIR}"
-    echo "DEBUG: CACHE_TYPE=${REPTRACKER_SYNC_CACHE_TYPE}"
-    echo "DEBUG: CACHE_KEY=${REPTRACKER_CACHE_KEY}"
-
-    # Fetch cache-manager from common-ci-configuration
-    CACHE_MANAGER="/tmp/cache-manager.sh"
-    curl -fsSL "https://gitlab.syncad.com/hive/common-ci-configuration/-/raw/develop/scripts/cache-manager.sh" -o "$CACHE_MANAGER"
-    chmod +x "$CACHE_MANAGER"
-
-    # Use cache-manager to get data (handles local cache check + NFS tar extraction)
-    mkdir -p "${JOB_DIR}"
-    if "$CACHE_MANAGER" get "${REPTRACKER_SYNC_CACHE_TYPE}" "${REPTRACKER_CACHE_KEY}" "${JOB_DIR}"; then
-      echo "Cache extraction complete"
-    else
-      echo "ERROR: Failed to get cache via cache-manager"
-      exit 1
-    fi
-
-    # Move shm_dir from inside datadir to parallel location if sync stored it there
-    if [[ -d "${HAF_DATA_DIRECTORY}/shm_dir" ]] && [[ ! -d "${HAF_SHM_DIRECTORY}" ]]; then
-      echo "Moving shm_dir from datadir to parallel location..."
-      mv "${HAF_DATA_DIRECTORY}/shm_dir" "${HAF_SHM_DIRECTORY}"
-    fi
-
-    # Handle blockchain - copy from datadir or symlink from BLOCK_LOG_SOURCE_DIR_5M
-    mkdir -p "${CI_PROJECT_DIR}/docker/blockchain"
-    if [[ -d "${HAF_DATA_DIRECTORY}/blockchain" ]] && [[ -n "$(ls -A "${HAF_DATA_DIRECTORY}/blockchain" 2>/dev/null)" ]]; then
-      echo "Copying blockchain data from cache to docker directory..."
-      sudo cp -aL "${HAF_DATA_DIRECTORY}/blockchain"/* "${CI_PROJECT_DIR}/docker/blockchain/"
-      sudo rm -rf "${HAF_DATA_DIRECTORY}/blockchain"
-    else
-      echo "No blockchain in cache, symlinking from BLOCK_LOG_SOURCE_DIR_5M..."
-      ln -sf "${BLOCK_LOG_SOURCE_DIR_5M}/block_log" "${CI_PROJECT_DIR}/docker/blockchain/block_log"
-      ln -sf "${BLOCK_LOG_SOURCE_DIR_5M}/block_log.artifacts" "${CI_PROJECT_DIR}/docker/blockchain/block_log.artifacts"
-    fi
-    ls -la "${CI_PROJECT_DIR}/docker/blockchain/"
-
-    ls -la "${HAF_DATA_DIRECTORY}/"
-    ls -la "${HAF_SHM_DIRECTORY}/" || true
-
-    echo -e "\e[0Ksection_end:$(date +%s):extract\r\e[0K"
-  - |
-    echo -e "\e[0Ksection_start:$(date +%s):compose[collapsed=true]\r\e[0KStarting test environment..."
-
-    cd "${CI_PROJECT_DIR}/docker"
-
-    # Create ci.env for docker-compose
-    cat <<-EOF | tee ci.env
-    HAF_IMAGE_NAME=${HAF_IMAGE_NAME}
-    HAF_DATA_DIRECTORY=${HAF_DATA_DIRECTORY}
-    HAF_SHM_DIRECTORY=${HAF_SHM_DIRECTORY}
-    HIVED_UID=$(id -u)
-    POSTGREST_IMAGE=registry.gitlab.syncad.com/hive/haf_api_node/postgrest:latest
-    EOF
-
-    IFS=" " read -ra COMPOSE_OPTIONS <<< "$COMPOSE_OPTIONS_STRING"
-    docker compose --env-file ci.env "${COMPOSE_OPTIONS[@]}" config
-    docker compose --env-file ci.env "${COMPOSE_OPTIONS[@]}" up --detach --quiet-pull
-
-    echo -e "\e[0Ksection_end:$(date +%s):compose\r\e[0K"
-  - |
-    echo -e "\e[0Ksection_start:$(date +%s):wait[collapsed=true]\r\e[0KWaiting for services..."
-
-    cd "${CI_PROJECT_DIR}/docker"
-    IFS=" " read -ra COMPOSE_OPTIONS <<< "$COMPOSE_OPTIONS_STRING"
-
-    # Wait for HAF PostgreSQL to be healthy
-    WAITED=0
-    MAX_WAIT=300
-    until docker compose --env-file ci.env "${COMPOSE_OPTIONS[@]}" exec -T haf pg_isready -U haf_admin -d haf_block_log 2>/dev/null; do
-      echo "Waiting for PostgreSQL... ($WAITED/$MAX_WAIT seconds)"
-      sleep 5
-      WAITED=$((WAITED + 5))
-      if [[ $WAITED -ge $MAX_WAIT ]]; then
-        echo "ERROR: PostgreSQL did not become ready in time"
-        docker compose --env-file ci.env "${COMPOSE_OPTIONS[@]}" logs haf | tail -50
-        exit 1
-      fi
-    done
-    echo "PostgreSQL is ready (took ${WAITED}s)"
-
-    # Verify app schema exists
-    if ! docker compose --env-file ci.env "${COMPOSE_OPTIONS[@]}" exec -T haf psql -U haf_admin -d haf_block_log -t -c "SELECT 1 FROM information_schema.schemata WHERE schema_name = 'reptracker_app'" | grep -q 1; then
-      echo "ERROR: reptracker_app schema not found"
-      exit 1
-    fi
-    echo "reptracker_app schema verified"
-
-    # Wait for PostgREST
-    # Note: In DinD, there can be DNS resolution inconsistencies between curl and nc.
-    # curl may resolve 'docker' to wrong IP. Use getent to get the correct IP.
-    DOCKER_IP=$(getent hosts docker | awk '{print $1}' | head -1)
-    if [[ -z "$DOCKER_IP" ]]; then
-      # Fallback: try to extract from DOCKER_HOST
-      DOCKER_IP="${DOCKER_HOST:-docker}"
-      DOCKER_IP="${DOCKER_IP#tcp://}"
-      DOCKER_IP="${DOCKER_IP%%:*}"
-    fi
-    echo "Using Docker host IP: $DOCKER_IP for PostgREST connection"
-
-    WAITED=0
-    echo "Checking PostgREST container status..."
-    docker compose --env-file ci.env "${COMPOSE_OPTIONS[@]}" ps postgrest
-    until curl -s --max-time 5 "http://${DOCKER_IP}:3000/" > /dev/null 2>&1; do
-      echo "Waiting for PostgREST at ${DOCKER_IP}:3000... ($WAITED/$MAX_WAIT seconds)"
-      # Check if container is still running
-      if ! docker compose --env-file ci.env "${COMPOSE_OPTIONS[@]}" ps postgrest 2>/dev/null | grep -q "Up"; then
-        echo "ERROR: PostgREST container is not running"
-        docker compose --env-file ci.env "${COMPOSE_OPTIONS[@]}" logs postgrest | tail -100
-        exit 1
-      fi
-      sleep 5
-      WAITED=$((WAITED + 5))
-      if [[ $WAITED -ge $MAX_WAIT ]]; then
-        echo "ERROR: PostgREST did not become ready in time"
-        echo "Container status:"
-        docker compose --env-file ci.env "${COMPOSE_OPTIONS[@]}" ps
-        echo "PostgREST logs:"
-        docker compose --env-file ci.env "${COMPOSE_OPTIONS[@]}" logs postgrest | tail -100
-        echo "Trying alternative connection methods:"
-        echo "- nc to docker:3000:"
-        nc -zv docker 3000 2>&1 || echo "nc failed"
-        echo "- curl verbose to ${DOCKER_IP}:3000:"
-        curl -v --max-time 5 "http://${DOCKER_IP}:3000/" 2>&1 || echo "curl failed"
-        exit 1
-      fi
-    done
-    echo "PostgREST is ready at ${DOCKER_IP}:3000"
-    # Export for test scripts that need to connect
-    export POSTGREST_HOST="${DOCKER_IP}"
-
-    echo -e "\e[0Ksection_end:$(date +%s):wait\r\e[0K"
-  after_script:
-  - |
-    cd "${CI_PROJECT_DIR}/docker"
-    IFS=" " read -ra COMPOSE_OPTIONS <<< "$COMPOSE_OPTIONS_STRING"
-    docker compose --env-file ci.env "${COMPOSE_OPTIONS[@]}" logs haf > haf-test.log 2>&1 || true
-    docker compose --env-file ci.env "${COMPOSE_OPTIONS[@]}" logs postgrest > postgrest-test.log 2>&1 || true
-    docker compose --env-file ci.env "${COMPOSE_OPTIONS[@]}" down --volumes || true
-    tar -czvf container-logs.tar.gz haf-test.log postgrest-test.log 2>/dev/null || true
-    sudo rm -rf "${CI_PROJECT_DIR}/${CI_JOB_ID}" || true
-  tags:
-  - data-cache-storage
-  - fast
+    COMPOSE_OPTIONS_STRING: "--file docker-compose-test.yml --ansi never"
 
 python_api_client_test:
   extends: .configuration_template
