@@ -76,10 +76,9 @@ variables:
 
 include:
 - template: Workflows/Branch-Pipelines.gitlab-ci.yml
-# All CI templates from common-ci-configuration (Phase 2: direct includes)
-# TODO: Change back to 'develop' after MR !150 is merged
+# All CI templates from common-ci-configuration
 - project: 'hive/common-ci-configuration'
-  ref: feat/phase4-dind-test-templates
+  ref: develop
   file:
     - '/templates/base.gitlab-ci.yml'
     - '/templates/docker_image_jobs.gitlab-ci.yml'
