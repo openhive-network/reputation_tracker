@@ -354,7 +354,6 @@ sync:
   - docker-setup-docker-image-build
   - docker-ci-runner-build
   variables:
-    DATA_SOURCE: ${DATA_CACHE_HAF_PREFIX}_${HAF_COMMIT}
     BACKEND_VERSION: "$CI_COMMIT_SHORT_SHA"
     POSTGRES_ACCESS: postgresql://haf_admin@docker:5432/haf_block_log
     COMPOSE_OPTIONS_STRING: --env-file ci.env --file docker-compose.yml --file overrides/dev.yml
@@ -362,33 +361,52 @@ sync:
     # Aliases for sync templates
     APP_SYNC_CACHE_TYPE: "${REPTRACKER_SYNC_CACHE_TYPE}"
     APP_CACHE_KEY: "${REPTRACKER_CACHE_KEY}"
-  timeout: 1 hours
+  timeout: 2 hours  # NFS cache push can take 50+ minutes on slow days
   before_script:
   - !reference [.haf_app_sync_setup, script]
-  - !reference [.haf_app_fetch_haf_cache, script]
+  - !reference [.haf_app_smart_cache_lookup, script]
   script:
-  # Relocate shm_dir from inside datadir to be a sibling (for old cache formats)
   - |
+    CACHE_HIT=$(cat /tmp/cache_hit 2>/dev/null || echo "false")
+
+    echo -e "\e[0Ksection_start:$(date +%s):compose[collapsed=true]\r\e[0KStarting the test environment..."
+
+    # cache-manager extracted directly to job directory with block_log symlinks and pgdata permissions fixed
+    echo "Data ready at DATADIR=${DATADIR}"
+    ls -la "${DATADIR}/" || true
+
+    # Relocate shm_dir from inside datadir to be a sibling (for old cache formats)
     if [[ -d "${DATADIR}/shm_dir" ]] && [[ ! -d "${SHM_DIR}" ]]; then
       echo "Relocating shm_dir to parallel location..."
       mv "${DATADIR}/shm_dir" "${SHM_DIR}"
     fi
     ls -la "${SHM_DIR}/" || true
-  # Copy blockchain and datadir
-  - !reference [.haf_app_copy_blockchain, script]
-  - !reference [.haf_app_copy_datadir, script]
-  # Start app-specific environment
-  - |
-    echo -e "\e[0Ksection_start:$(date +%s):start_env[collapsed=true]\r\e[0KStarting the test environment..."
+
+    # Docker Compose bind mounts docker/blockchain over datadir/blockchain.
+    # Copy blockchain files there so HAF can see them.
+    # Use cp -aL to dereference symlinks (copy actual files, not symlink references)
+    echo "Copying blockchain files to docker/blockchain..."
+    rm -rf "${CI_PROJECT_DIR}/docker/blockchain"/*
+    cp -aL "${DATADIR}/blockchain"/* "${CI_PROJECT_DIR}/docker/blockchain/"
+    ls -la "${CI_PROJECT_DIR}/docker/blockchain/"
+
+    # Remove blockchain dir from datadir so Docker volume mount doesn't conflict
+    sudo rm -rf "${DATADIR}/blockchain"
+
     "${CI_PROJECT_DIR}/scripts/ci-helpers/start-ci-test-environment.sh"
-    echo -e "\e[0Ksection_end:$(date +%s):start_env\r\e[0K"
+
+    echo -e "\e[0Ksection_end:$(date +%s):compose\r\e[0K"
   - |
-    echo -e "\e[0Ksection_start:$(date +%s):wait[collapsed=true]\r\e[0KWaiting for reputation tracker..."
-    "${CI_PROJECT_DIR}/scripts/ci-helpers/wait-for-rt-startup.sh"
-    echo -e "\e[0Ksection_end:$(date +%s):wait\r\e[0K"
+    if [[ "$CACHE_HIT" == "true" ]]; then
+      echo "Cache hit - reputation_tracker already synced, skipping wait"
+    else
+      echo -e "\e[0Ksection_start:$(date +%s):wait[collapsed=true]\r\e[0KWaiting for reputation tracker..."
+      "${CI_PROJECT_DIR}/scripts/ci-helpers/wait-for-rt-startup.sh"
+      echo -e "\e[0Ksection_end:$(date +%s):wait\r\e[0K"
+    fi
   # Shutdown and save cache using templates
   - !reference [.haf_app_sync_shutdown, script]
-  - !reference [.haf_app_sync_save_cache, script]
+  - !reference [.haf_app_sync_save_cache_conditional, script]
   after_script: !reference [.haf_app_sync_cleanup, after_script]
   artifacts: !reference [.haf_app_sync_artifacts, artifacts]
   tags:
