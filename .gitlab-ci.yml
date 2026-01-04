@@ -18,10 +18,8 @@ variables:
   # Full clone (depth 0) enables efficient incremental fetches - shallow clones
   # don't reduce server CPU and make fetch less effective.
   GIT_STRATEGY: fetch
-  GIT_SUBMODULE_STRATEGY: normal
+  GIT_SUBMODULE_STRATEGY: none  # HAF submodule no longer needed
   GIT_DEPTH: 0
-  GIT_SUBMODULE_DEPTH: 0
-  GIT_SUBMODULE_UPDATE_FLAGS: --jobs 4
   # Temporary: separate clone path prevents clone-strategy jobs from erasing
   # fetch workspaces during transition. Remove once all projects use fetch.
   GIT_CLONE_PATH: $CI_BUILDS_DIR/fetch/$CI_RUNNER_SHORT_TOKEN/$CI_CONCURRENT_ID/$CI_PROJECT_PATH
@@ -47,10 +45,13 @@ variables:
   PYTHON_IMAGE: "registry.gitlab.syncad.com/hive/hive/ci-base-image${PYTHON_IMAGE_TAG}"
   # Python 3.14 compatibility - allow PyO3-based packages to build
   PYO3_USE_ABI3_FORWARD_COMPATIBILITY: "1"
-  # HAF submodule commit - used for data caching and service containers
-  HAF_COMMIT: "70c30036c6a5d0cb882d05aa22f42523a8f34970"
+  # HAF configuration (no submodule needed)
+  # HAF_COMMIT: Used for data cache key lookup and Docker image tag (first 8 chars)
+  HAF_COMMIT: "219ef44775ee1ed85630cf513d8671f6ca4ccc49"  # Known cached HAF commit
   # Enable CI-specific PostgreSQL config with reduced memory for HAF service containers
   HAF_CI_MODE: "1"
+  # Common CI configuration reference
+  COMMON_CI_REF: "develop"
   # =============================================================================
   # QUICK TEST MODE
   # =============================================================================
@@ -171,28 +172,33 @@ lint_sql_scripts:
 validate_haf_commit:
   extends: .haf_commit_validation
   stage: build
-  variables:
-    # Uses HAF_COMMIT from global variables - no need to duplicate here
-    HAF_SUBMODULE_PATH: "haf"
+  # Uses HAF_COMMIT from global variables
   tags:
   - public-runner-docker
 
+# Use existing HAF image from registry (no submodule needed)
 prepare_haf_image:
   stage: build
-  extends: .prepare_haf_image
-  variables:
-    SUBMODULE_DIR: "$CI_PROJECT_DIR/haf"
-    REGISTRY_USER: "$HAF_DEPLOY_USERNAME"
-    REGISTRY_PASS: "$HAF_DEPLOY_TOKEN"
-    GIT_SUBMODULE_STRATEGY: recursive
-    # Use fresh clone to avoid stale submodule state from previous jobs
-    GIT_STRATEGY: clone
-  before_script:
-  - git config --global --add safe.directory $CI_PROJECT_DIR/haf
-  - git config --global --add safe.directory $CI_PROJECT_DIR/haf/hive
+  image: alpine:latest
+  needs:
+    - job: validate_haf_commit
+      artifacts: true
+  script:
+    - |
+      # Derive image tag from HAF_COMMIT (first 8 characters)
+      HAF_SHORT_COMMIT="${HAF_COMMIT:0:8}"
+      HAF_IMAGE_NAME="registry.gitlab.syncad.com/hive/haf:${HAF_SHORT_COMMIT}"
+      echo "Using HAF image: ${HAF_IMAGE_NAME}"
+      # Export image name and tag for Docker Compose scripts
+      echo "HAF_IMAGE_NAME=${HAF_IMAGE_NAME}" > docker_image_name.env
+      echo "HAF_REGISTRY_TAG=${HAF_SHORT_COMMIT}" >> docker_image_name.env
+  artifacts:
+    reports:
+      dotenv: docker_image_name.env
+    paths:
+      - docker_image_name.env
   tags:
   - public-runner-docker
-  - bigjob
 
 extract-swagger-json:
   extends: .filter_out_swagger_json
@@ -256,13 +262,12 @@ prepare_haf_data:
   - job: detect_changes
     artifacts: true
   - job: prepare_haf_image
-    optional: true  # Can be skipped when AUTO_SKIP_BUILD=true
+    artifacts: true
   stage: build
   timeout: 80m
   variables:
-    SUBMODULE_DIR: "$CI_PROJECT_DIR/haf"
     BLOCK_LOG_SOURCE_DIR: $BLOCK_LOG_SOURCE_DIR_5M
-    CONFIG_INI_SOURCE: "$CI_PROJECT_DIR/haf/docker/config_5M.ini"
+    # Config fetched from hive repo by template if not specified locally
   # Note: The .prepare_haf_data_5m template already has caching logic
   # that skips replay if data exists. No additional skip logic needed.
   tags:
@@ -343,16 +348,12 @@ sync:
   - job: detect_changes
     artifacts: true
   - job: prepare_haf_image
-    optional: true  # Skip when only docs/tests changed
+    artifacts: true
   - job: prepare_haf_data
-    optional: true  # Skip when only docs/tests changed
+    artifacts: true
   - docker-setup-docker-image-build
   - docker-ci-runner-build
   variables:
-    # Use clone strategy to avoid stale submodule state from fetch strategy
-    GIT_STRATEGY: clone
-    # Need recursive for haf/hive submodule (copy_datadir.sh symlink)
-    GIT_SUBMODULE_STRATEGY: recursive
     DATA_SOURCE: ${DATA_CACHE_HAF_PREFIX}_${HAF_COMMIT}
     BACKEND_VERSION: "$CI_COMMIT_SHORT_SHA"
     POSTGRES_ACCESS: postgresql://haf_admin@docker:5432/haf_block_log
@@ -366,6 +367,13 @@ sync:
   - !reference [.haf_app_sync_setup, script]
   - !reference [.haf_app_fetch_haf_cache, script]
   script:
+  # Relocate shm_dir from inside datadir to be a sibling (for old cache formats)
+  - |
+    if [[ -d "${DATADIR}/shm_dir" ]] && [[ ! -d "${SHM_DIR}" ]]; then
+      echo "Relocating shm_dir to parallel location..."
+      mv "${DATADIR}/shm_dir" "${SHM_DIR}"
+    fi
+    ls -la "${SHM_DIR}/" || true
   # Copy blockchain and datadir
   - !reference [.haf_app_copy_blockchain, script]
   - !reference [.haf_app_copy_datadir, script]
@@ -525,8 +533,7 @@ pattern-test:
   - |
     echo -e "\e[0Ksection_start:$(date +%s):tests_api[collapsed=true]\r\e[0KCloning tests_api repository..."
     cd "${CI_PROJECT_DIR}"
-    TESTS_API_DIR="${CI_PROJECT_DIR}/haf/hive/tests/python/hive-local-tools/tests_api"
-    mkdir -p "$(dirname "$TESTS_API_DIR")"
+    TESTS_API_DIR="${CI_PROJECT_DIR}/tests_api"
     rm -rf "$TESTS_API_DIR"
     git clone --depth 1 https://gitlab.syncad.com/hive/tests_api.git "$TESTS_API_DIR"
     echo -e "\e[0Ksection_end:$(date +%s):tests_api\r\e[0K"
@@ -534,7 +541,7 @@ pattern-test:
   - |
     # Install tests_api for validate_response module (required by tavern tests)
     . venv/bin/activate
-    pip install -e "${CI_PROJECT_DIR}/haf/hive/tests/python/hive-local-tools/tests_api"
+    pip install -e "${CI_PROJECT_DIR}/tests_api"
   script:
   - |
     cd "${CI_PROJECT_DIR}"
