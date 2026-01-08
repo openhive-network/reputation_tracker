@@ -50,6 +50,11 @@ DECLARE
     _rep BIGINT;
     _result INT;
     _account_id INT := reptracker_backend.get_account_id("account-name", TRUE);
+    -- Reputation display formula constants
+    _log_base   INT := reptracker_backend.reputation_log_base();
+    _log_offset INT := reptracker_backend.reputation_log_offset();
+    _multiplier INT := reptracker_backend.reputation_multiplier();
+    _base_score INT := reptracker_backend.reputation_base_score();
 BEGIN
   PERFORM set_config('response.headers', '[{"Cache-Control": "public, max-age=2"}]', true);
 
@@ -62,16 +67,16 @@ BEGIN
   ELSE
       WITH log_account_rep AS MATERIALIZED
       (
-          SELECT 
-              LOG(10, ABS(_rep)) AS rep,
-              (CASE WHEN _rep < 0 THEN -1 ELSE 1 END) AS is_neg 
+          SELECT
+              LOG(_log_base, ABS(_rep)) AS rep,
+              (CASE WHEN _rep < 0 THEN -1 ELSE 1 END) AS is_neg
       ),
       calculate_rep AS MATERIALIZED
       (
-          SELECT GREATEST(lar.rep - 9, 0) * lar.is_neg AS rep
+          SELECT GREATEST(lar.rep - _log_offset, 0) * lar.is_neg AS rep
           FROM log_account_rep lar
       )
-          SELECT ((cr.rep * 9) + 25)::INT INTO _result
+          SELECT ((cr.rep * _multiplier) + _base_score)::INT INTO _result
           FROM calculate_rep cr;
 
       RETURN _result;

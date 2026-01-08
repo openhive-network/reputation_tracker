@@ -17,6 +17,10 @@ DECLARE
   __delete_votes INT;
   __upsert_votes INT;
   __vote_rec RECORD;
+  -- Operation type IDs (cached to avoid repeated function calls)
+  __op_vote   INT := reptracker_backend.op_effective_comment_vote();
+  __op_delete INT := reptracker_backend.op_delete_comment();
+  __op_payout INT := reptracker_backend.op_comment_payout_update();
 BEGIN
 -- Create temp table to materialize votes for sequential processing
 CREATE TEMP TABLE IF NOT EXISTS _votes_to_process (
@@ -30,15 +34,24 @@ TRUNCATE _votes_to_process;
 ---------------------------------------------------------------------------------------
 WITH vote_operations_raw AS (
   SELECT
-    effective_votes.author,
-    effective_votes.voter,
-    effective_votes.permlink,
-    effective_votes.rshares,
+    ev.author,
+    ev.voter,
+    ev.permlink,
+    ev.rshares,
     ov.op_type_id,
     ov.id AS source_op
   FROM operations_view ov
-  CROSS JOIN reptracker_backend.process_vote_impacting_operations(ov.body, ov.op_type_id) AS effective_votes
-  WHERE ov.op_type_id IN (72, 17, 61)
+  CROSS JOIN LATERAL (
+    SELECT (
+      CASE
+        WHEN ov.op_type_id = __op_vote THEN
+          reptracker_backend.process_effective_vote_operation(ov.body)
+        ELSE
+          reptracker_backend.process_deleted_comment_operation(ov.body)
+      END
+    ).*
+  ) AS ev
+  WHERE ov.op_type_id IN (__op_vote, __op_delete, __op_payout)
   AND ov.block_num BETWEEN _first_block_num AND _last_block_num
 ),
 -- Collect unique accounts from this batch (reduces account lookups)
@@ -116,7 +129,7 @@ join_permlink_id_to_deletes AS MATERIALIZED (
     source_op,
     row_num
   FROM ranked_data
-  WHERE op_type_id != 72 
+  WHERE op_type_id != __op_vote 
 ),
 add_prev_votes AS (
   SELECT 
@@ -135,7 +148,7 @@ add_prev_votes AS (
     current.permlink_id = previous.permlink_id AND
     current.op_type_id = previous.op_type_id AND
     current.row_num = previous.row_num - 1
-  WHERE current.op_type_id = 72
+  WHERE current.op_type_id = __op_vote
 ),
 -- Link previous votes
 find_prev_votes_in_table AS (
@@ -209,7 +222,7 @@ votes_with_subsequent_delete AS (
     dv.author_id = rd.author_id AND
     dv.permlink_id = rd.permlink_id AND
     dv.source_op > rd.source_op
-  WHERE rd.row_num = 1 AND rd.op_type_id = 72
+  WHERE rd.row_num = 1 AND rd.op_type_id = __op_vote
 ),
 upsert_votes AS (
   INSERT INTO active_votes AS av
@@ -225,7 +238,7 @@ upsert_votes AS (
     vwsd.permlink_id = uv.permlink_id
   WHERE
     uv.row_num = 1 AND
-    uv.op_type_id = 72 AND
+    uv.op_type_id = __op_vote AND
     vwsd.author_id IS NULL
   ON CONFLICT ON CONSTRAINT pk_active_votes DO UPDATE SET
     rshares = EXCLUDED.rshares
