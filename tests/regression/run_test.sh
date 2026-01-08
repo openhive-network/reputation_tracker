@@ -58,6 +58,10 @@ done
 
 POSTGRES_ACCESS_ADMIN="postgresql://$POSTGRES_USER@$POSTGRES_HOST:$POSTGRES_PORT/haf_block_log"
 
+# Install test schema (only installed during testing, not in production)
+echo "Installing regression test schema..."
+"$SCRIPTDIR/install_test_schema.sh" --host="$POSTGRES_HOST" --port="$POSTGRES_PORT" --user="$POSTGRES_USER" --schema="$REPTRACKER_SCHEMA"
+
 echo "Clearing tables..."
 psql "$POSTGRES_ACCESS_ADMIN" -v "ON_ERROR_STOP=on" -c "TRUNCATE reptracker_account_dump.account_reputation;"
 psql "$POSTGRES_ACCESS_ADMIN" -v "ON_ERROR_STOP=on" -c "TRUNCATE reptracker_account_dump.differing_accounts;"
