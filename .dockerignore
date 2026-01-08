@@ -22,5 +22,4 @@ tests/
 .sqlfluff
 docker-bake.hcl
 Dockerfile
-postgrest.conf
 README.md
