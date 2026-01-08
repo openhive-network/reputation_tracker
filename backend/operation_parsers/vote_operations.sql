@@ -21,16 +21,23 @@ BEGIN
     ((_operation_body)->'value'->>'author')::TEXT,
     ((_operation_body)->'value'->>'voter')::TEXT,
     ((_operation_body)->'value'->>'permlink')::TEXT,
-    (
-        CASE jsonb_typeof(_operation_body -> 'value' -> 'rshares')
-        WHEN 'number' THEN
-        (_operation_body -> 'value' -> 'rshares')::BIGINT
-        WHEN 'string' THEN
-            trim(both '"' FROM (_operation_body -> 'value' ->> 'rshares'))::BIGINT
-        ELSE
-          NULL::BIGINT
-        END
-    )
+    -- Simplified: ->> extracts as TEXT regardless of JSON type, then cast to BIGINT.
+    -- No instances were found where rshares was anything other than a number.
+    (_operation_body -> 'value' ->> 'rshares')::BIGINT
+    /*
+     * Previous implementation handled string vs number JSON types explicitly.
+     * This was likely incorrect - the TRIM of quotes on ->> result is redundant
+     * since ->> already returns unquoted text:
+     *
+     *   CASE jsonb_typeof(_operation_body -> 'value' -> 'rshares')
+     *   WHEN 'number' THEN
+     *     (_operation_body -> 'value' -> 'rshares')::BIGINT
+     *   WHEN 'string' THEN
+     *     trim(both '"' FROM (_operation_body -> 'value' ->> 'rshares'))::BIGINT
+     *   ELSE
+     *     NULL::BIGINT
+     *   END
+     */
   )::reptracker_backend.effective_vote_return;
 
 END
