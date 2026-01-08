@@ -75,6 +75,8 @@ BEGIN
     continue_processing BOOLEAN NOT NULL, -- TRUE to continue, FALSE to stop
     is_accounts_copied  BOOLEAN           -- Flag for account migration status
   );
+  -- Initialize control table
+  INSERT INTO reptracker_app_status (continue_processing, is_accounts_copied) VALUES (True, False);
 
   -- Version tracking table
   CREATE TABLE IF NOT EXISTS version
@@ -118,14 +120,6 @@ BEGIN
 
 END
 $$;
-
--- the current version of sqlfluff doesn't understand 'GRANT MAINTAIN'
-GRANT MAINTAIN ON ALL TABLES IN SCHEMA reptracker_app TO hived_group; -- noqa: PRS
-GRANT ALL ON SCHEMA reptracker_app TO hived_group;
-
--- Initialize control table
-INSERT INTO reptracker_app_status (continue_processing, is_accounts_copied)
-VALUES (True, False);
 
 -- ============================================================================
 -- CONTROL FUNCTIONS
