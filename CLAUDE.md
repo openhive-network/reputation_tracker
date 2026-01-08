@@ -11,14 +11,23 @@ Reputation Tracker is a HAF (Hive Application Framework) application that calcul
 The application is SQL-based, running as stored procedures inside PostgreSQL:
 
 - **db/** - Core SQL implementation
-  - `database_schema.sql` - Creates tables: `account_reputations`, `active_votes`, `permlinks`
-  - `main_loop.sql` - Application entry point (`main()` procedure) and block processing logic
-  - `process_block_range.sql` - Processes vote operations to update reputations
-  - `backend.sql` - Backend schema functions
+  - `reptracker_app.sql` - HAF context, tables, control functions, and processing procedures
+  - `process_block_range.sql` - Core block processing logic for vote operations
+  - `builtin_roles.sql` - Database role definitions
+- **backend/** - Helper functions
+  - `operation_parsers/vote_operations.sql` - Vote operation parsing and reputation calculation
+  - `utilities/` - Account lookup, validators, exceptions
 - **endpoints/** - PostgREST API endpoints
   - `get_reputation.sql` - Main API: `/accounts/{name}/reputation`
+  - `get_rep_last_synced_block.sql` - Sync status endpoint
+  - `get_rep_version.sql` - Version endpoint
   - `endpoint_schema.sql` - OpenAPI schema definitions
 - **scripts/** - Shell scripts for installation and operation
+- **tests/** - Test suites
+  - `regression/` - Regression tests comparing against reference data
+  - `functional/` - Functional tests
+  - `tavern/` - API contract tests
+  - `performance/` - Performance benchmarks
 
 The app uses HAF's context/fork handling system with two processing modes:
 - `MASSIVE_PROCESSING` - Bulk sync with batched commits
@@ -62,7 +71,7 @@ docker compose down -v
 ### Testing
 ```bash
 # Regression test (compares against reference data)
-cd tests && ./account_dump_test.sh --host=localhost
+cd tests/regression && ./run_test.sh --host=localhost
 
 # Functional tests
 cd tests/functional && ./test_scripts.sh --host=localhost
