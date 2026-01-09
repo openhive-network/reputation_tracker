@@ -123,3 +123,89 @@ The `haf/` directory is a git submodule pointing to the HAF framework. It provid
 - Database infrastructure and context management
 - Block/operation views and helpers
 - CI templates and cache management scripts
+
+## Reputation Calculation
+
+### How Reputation Works
+
+Hive reputation is calculated from votes on content (posts/comments). The core formula:
+
+```
+reputation_change = rshares >> 6  (equivalent to rshares / 64)
+```
+
+Where `rshares` (reward shares) is the vote weight. The bit shift scales vote impact to prevent reputation inflation.
+
+### Key Rules
+
+1. **Voter reputation gate**: Only votes from accounts with non-negative reputation affect the target
+2. **Vote changes**: When a vote is changed, the old contribution is undone before applying the new one
+3. **Sequential processing**: Votes must be processed in blockchain order because each vote's effect depends on the voter's current reputation at that moment
+4. **Implicit vs explicit**: Accounts start with implicit reputation (is_implicit=TRUE) until they receive their first vote
+
+### Vote-Impacting Operations
+
+Three operation types affect reputation:
+
+| Op Type ID | Operation | Effect |
+|------------|-----------|--------|
+| 72 | `effective_comment_vote` | Vote cast or changed (has rshares) |
+| 17 | `delete_comment` | Post deleted, all votes on it are removed |
+| 61 | `comment_payout_update` | Post paid out, votes are finalized |
+
+## Block Processing Flow
+
+The main processing function `reptracker_block_range_data()` in `db/process_block_range.sql` executes in phases:
+
+### Phase 1: Extract and Parse Operations
+1. **operations_in_range** (MATERIALIZED): Filter vote-related operations from block range
+2. **vote_operations_raw**: Parse JSON bodies using CROSS JOIN LATERAL with inline CASE dispatch
+
+### Phase 2: Resolve Account Names
+- Batch lookup of unique account names to IDs via `accounts_view`
+- Uses JOIN pattern instead of correlated subqueries for efficiency
+
+### Phase 3: Manage Permlink Dictionary
+- Insert new permlinks to dictionary table (ON CONFLICT DO NOTHING)
+- Join permlink IDs back to operations
+
+### Phase 4: Rank and Find Previous Votes
+- **ranked_data**: ROW_NUMBER partitions by (author, voter, permlink) to find most recent
+- **add_prev_votes**: Self-join to find previous vote within the batch
+- **find_prev_votes_in_table**: Fallback lookup in active_votes table for historical votes
+
+### Phase 5: Handle Vote Cancellations
+- Detect if delete/payout occurred between previous vote and current
+- Reset prev_rshares to 0 if previous vote was already canceled
+
+### Phase 6: Update Tables
+- **delete_votes**: Remove votes for deleted/paid posts
+- **upsert_votes**: Insert/update votes that should persist
+- **materialize_votes**: Populate temp table for sequential processing
+
+### Phase 7: Calculate Reputation
+- Process votes sequentially (FOR LOOP) by blockchain order (source_op)
+- Call `calculate_account_reputations()` for each vote
+
+## Key Tables
+
+| Table | Purpose |
+|-------|---------|
+| `account_reputations` | Accumulated reputation per account |
+| `active_votes` | Current vote state (author, voter, permlink, rshares) |
+| `permlinks` | Dictionary mapping permlink text to integer IDs |
+
+## Performance Optimizations
+
+- **MATERIALIZED CTEs**: Force materialization of expensive subqueries to prevent repeated execution
+- **Batch JOINs**: Use JOIN instead of correlated subqueries for O(n) vs O(n²) lookups
+- **LEFT ANTI-JOIN pattern**: `LEFT JOIN ... WHERE x IS NULL` instead of `NOT EXISTS` for batch filtering
+- **Cached operation type IDs**: Store in DECLARE variables to avoid repeated function calls
+- **Inline CASE dispatch**: Faster than wrapper function for JSON parsing
+
+## Coding Conventions
+
+- All functions use `SET ROLE reptracker_owner` / `RESET ROLE` wrapper
+- JSDoc-style comments for function documentation
+- Phase markers in CTE chains for readability
+- STABLE/IMMUTABLE volatility hints where appropriate
