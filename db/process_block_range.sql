@@ -293,9 +293,12 @@ delete_votes AS (
 
 -- Find votes that will be deleted later in this batch (don't bother inserting them)
 -- Uses batch JOIN instead of per-row EXISTS
+-- IMPORTANT: Must include voter_id because different voters may vote at different times
+-- relative to the delete, so each (author, voter, permlink) triple must be checked separately
 votes_with_subsequent_delete AS (
   SELECT DISTINCT
     rd.author_id,
+    rd.voter_id,
     rd.permlink_id
   FROM ranked_data rd
   JOIN join_permlink_id_to_deletes dv ON
@@ -318,6 +321,7 @@ upsert_votes AS (
   -- LEFT ANTI-JOIN: exclude votes with subsequent delete
   LEFT JOIN votes_with_subsequent_delete vwsd ON
     vwsd.author_id = uv.author_id AND
+    vwsd.voter_id = uv.voter_id AND
     vwsd.permlink_id = uv.permlink_id
   WHERE
     uv.row_num = 1 AND              -- Only most recent vote per (author, voter, permlink)
