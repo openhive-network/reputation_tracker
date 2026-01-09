@@ -477,10 +477,9 @@ sync:
 # =============================================================================
 # DinD Test Template
 # =============================================================================
-# Custom template with fallback cache extraction logic.
-# The common-ci-configuration template expects exact cache key match, but when
-# sync job finds an existing cache (same HAF commit, different app commit),
-# we need fallback logic to find any compatible cache.
+# Test jobs extract the exact cache created by the sync job in this pipeline.
+# No fallback to caches from other app versions - the cache key includes both
+# HAF commit and app commit to ensure schema compatibility.
 .test-with-docker-compose:
   extends:
     - .docker_image_builder_job_template
@@ -496,42 +495,15 @@ sync:
       echo -e "\e[0Ksection_start:$(date +%s):login[collapsed=true]\r\e[0KLogging to Docker registry..."
       docker login -u "$CI_REGISTRY_USER" -p "$CI_REGISTRY_PASSWORD" $CI_REGISTRY
       echo -e "\e[0Ksection_end:$(date +%s):login\r\e[0K"
-    # Cache extraction with fallback logic
+    # Cache extraction using shared script from common-ci-configuration
+    - !reference [.fetch_extract_test_cache, before_script]
     - |
       echo -e "\e[0Ksection_start:$(date +%s):extract[collapsed=true]\r\e[0KExtracting cache for DinD test..."
       JOB_DIR="${CI_PROJECT_DIR}/${CI_JOB_ID}"
-
-      # Fetch cache-manager
-      if [[ ! -x "$CACHE_MANAGER" ]]; then
-        mkdir -p "$(dirname "$CACHE_MANAGER")"
-        curl -fsSL "https://gitlab.syncad.com/hive/common-ci-configuration/-/raw/${CACHE_MANAGER_REF:-develop}/scripts/cache-manager.sh" -o "$CACHE_MANAGER"
-        chmod +x "$CACHE_MANAGER"
-      fi
-
       mkdir -p "${JOB_DIR}"
 
-      # Try exact cache key first
-      EXACT_KEY="${HAF_COMMIT}_${CI_COMMIT_SHORT_SHA}"
-      echo "Trying exact cache key: ${APP_SYNC_CACHE_TYPE}/${EXACT_KEY}"
-      if CACHE_HANDLING=haf "$CACHE_MANAGER" get "${APP_SYNC_CACHE_TYPE}" "${EXACT_KEY}" "${JOB_DIR}" 2>/dev/null; then
-        echo "Found exact cache match"
-      else
-        # Fallback: search for any cache with same HAF commit
-        echo "Exact key not found, searching for compatible cache with HAF commit ${HAF_COMMIT}..."
-        NFS_CACHE_DIR="${DATA_CACHE_NFS_PREFIX}/${APP_SYNC_CACHE_TYPE}"
-        FOUND_CACHE=$(ls -t "${NFS_CACHE_DIR}/${HAF_COMMIT}_"*.tar 2>/dev/null | head -1 || true)
-        if [[ -n "$FOUND_CACHE" ]]; then
-          FOUND_KEY=$(basename "$FOUND_CACHE" .tar)
-          echo "Found compatible cache: ${FOUND_KEY}"
-          if ! CACHE_HANDLING=haf "$CACHE_MANAGER" get "${APP_SYNC_CACHE_TYPE}" "${FOUND_KEY}" "${JOB_DIR}"; then
-            echo "ERROR: Failed to extract compatible cache"
-            exit 1
-          fi
-        else
-          echo "ERROR: No compatible cache found in ${NFS_CACHE_DIR}/${HAF_COMMIT}_*.tar"
-          exit 1
-        fi
-      fi
+      # Use shared extract-test-cache.sh script (exact key match only)
+      $EXTRACT_TEST_CACHE "${APP_SYNC_CACHE_TYPE}" "${APP_CACHE_KEY}" "${JOB_DIR}"
 
       # Relocate shm_dir from inside datadir to be a sibling (for old cache formats)
       if [[ -d "${HAF_DATA_DIRECTORY}/shm_dir" ]] && [[ ! -d "${HAF_SHM_DIRECTORY}" ]]; then
