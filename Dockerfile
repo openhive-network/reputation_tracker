@@ -45,8 +45,8 @@ COPY scripts/install_app.sh /app/scripts/install_app.sh
 COPY scripts/uninstall_app.sh /app/scripts/uninstall_app.sh
 COPY scripts/process_blocks.sh /app/scripts/process_blocks.sh
 COPY db /app/db
+COPY backend /app/backend
 COPY endpoints /app/endpoints
-COPY account_dump /app/account_dump
 COPY docker/scripts/block-processing-healthcheck.sh /app/block-processing-healthcheck.sh
 COPY docker/scripts/docker_entrypoint.sh /app/docker_entrypoint.sh
 COPY --from=version-calculcation --chown=haf_admin:users /home/haf_admin/src/scripts/set_version_in_sql.pgsql /app/scripts/set_version_in_sql.pgsql
