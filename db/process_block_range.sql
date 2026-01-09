@@ -46,13 +46,29 @@ TRUNCATE _votes_to_process;
 WITH
 
 -----------------------------------------------------------------------------------
--- PHASE 1: Extract raw vote operations from blockchain
+-- PHASE 1a: Gather relevant operations from blockchain
 -----------------------------------------------------------------------------------
--- Parse JSON operation bodies into structured data.
+-- Filter to only vote-related operations in the block range.
+-- MATERIALIZED ensures this is computed once before JSON parsing.
 -- Three operation types affect reputation:
---   - effective_comment_vote: Vote was cast or changed (has rshares)
---   - delete_comment: Post deleted, all votes on it are canceled
---   - comment_payout_update: Post paid out, votes are finalized
+--   - effective_comment_vote (72): Vote was cast or changed (has rshares)
+--   - delete_comment (17): Post deleted, all votes on it are canceled
+--   - comment_payout_update (61): Post paid out, votes are finalized
+operations_in_range AS MATERIALIZED (
+  SELECT
+    ov.body,
+    ov.op_type_id,
+    ov.id AS source_op
+  FROM operations_view ov
+  WHERE ov.op_type_id IN (__op_vote, __op_delete, __op_payout)
+    AND ov.block_num BETWEEN _first_block_num AND _last_block_num
+),
+
+-----------------------------------------------------------------------------------
+-- PHASE 1b: Parse JSON operation bodies into structured data
+-----------------------------------------------------------------------------------
+-- CROSS JOIN LATERAL parses each operation's JSON body.
+-- Inline CASE avoids wrapper function overhead (process_vote_impacting_operations).
 vote_operations_raw AS (
   SELECT
     ev.author,
@@ -60,10 +76,8 @@ vote_operations_raw AS (
     ev.permlink,
     ev.rshares,
     ov.op_type_id,
-    ov.id AS source_op   -- Unique operation ID, used for ordering
-  FROM operations_view ov
-  -- CROSS JOIN LATERAL allows calling parser function per row
-  -- CASE dispatches to appropriate parser based on operation type
+    ov.source_op
+  FROM operations_in_range ov
   CROSS JOIN LATERAL (
     SELECT (
       CASE
@@ -75,8 +89,6 @@ vote_operations_raw AS (
       END
     ).*
   ) AS ev
-  WHERE ov.op_type_id IN (__op_vote, __op_delete, __op_payout)
-    AND ov.block_num BETWEEN _first_block_num AND _last_block_num
 ),
 
 -----------------------------------------------------------------------------------
