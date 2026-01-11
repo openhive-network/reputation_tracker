@@ -34,6 +34,7 @@ variables:
   APP_SYNC_CACHE_TYPE: "${REPTRACKER_SYNC_CACHE_TYPE}"
   APP_CACHE_KEY: "${REPTRACKER_CACHE_KEY}"
   HAF_APP_SCHEMA: "reptracker_app"
+  HAF_APP_ROLE_PREFIX: "reptracker"
   BLOCK_LOG_SOURCE_DIR_5M: /blockchain/block_log_5m
   FF_NETWORK_PER_BUILD: 1
   # uses registry.gitlab.syncad.com/hive/haf/ci-base-image:ubuntu24.04-1
@@ -537,6 +538,39 @@ sync:
     - standard
     - fast
 
+# Template for Tavern-based tests (uses centralized common-ci template)
+.test-with-docker-compose-tavern:
+  extends:
+    - .docker_image_builder_job_template
+    - .haf_app_dind_tavern_tests
+  image: registry.gitlab.syncad.com/hive/reputation_tracker/ci-runner:docker-24.0.1-8
+  variables:
+    REPTRACKER_ADDRESS: localhost
+    REPTRACKER_PORT: 3000
+    PYTEST_WORKERS: "16"
+  before_script:
+    - !reference [.docker_image_builder_job_template, before_script]
+    - |
+      echo -e "\e[0Ksection_start:$(date +%s):login[collapsed=true]\r\e[0KLogging to Docker registry..."
+      docker login -u "$CI_REGISTRY_USER" -p "$CI_REGISTRY_PASSWORD" $CI_REGISTRY
+      echo -e "\e[0Ksection_end:$(date +%s):login\r\e[0K"
+    - !reference [.haf_app_dind_tavern_tests, before_script]
+    - |
+      echo -e "\e[0Ksection_start:$(date +%s):tests_api[collapsed=true]\r\e[0KCloning tests_api repository..."
+      cd "${CI_PROJECT_DIR}"
+      TESTS_API_DIR="${CI_PROJECT_DIR}/tests_api"
+      rm -rf "$TESTS_API_DIR"
+      git clone --depth 1 https://gitlab.syncad.com/hive/tests_api.git "$TESTS_API_DIR"
+      echo -e "\e[0Ksection_end:$(date +%s):tests_api\r\e[0K"
+    - |
+      # Install tests_api for validate_response module (required by tavern tests)
+      . venv/bin/activate
+      pip install -e "${CI_PROJECT_DIR}/tests_api"
+  tags:
+    - data-cache-storage
+    - standard
+    - fast
+
 python_api_client_test:
   extends: .configuration_template
   stage: test
@@ -642,10 +676,7 @@ performance-test:
       junit: tests/performance/junit-result.xml
 
 pattern-test:
-  extends:
-    - .test-with-docker-compose
-    - .tavern_test_variables
-  stage: test
+  extends: .test-with-docker-compose-tavern
   needs:
   - job: sync
     artifacts: true
@@ -655,30 +686,11 @@ pattern-test:
     artifacts: true
   - job: docker-ci-runner-build
     artifacts: true
-  variables:
-    REPTRACKER_ADDRESS: docker
-    REPTRACKER_PORT: 3000
-    PYTEST_WORKERS: "16"
-  before_script:
-  - !reference [.test-with-docker-compose, before_script]
-  - |
-    echo -e "\e[0Ksection_start:$(date +%s):tests_api[collapsed=true]\r\e[0KCloning tests_api repository..."
-    cd "${CI_PROJECT_DIR}"
-    TESTS_API_DIR="${CI_PROJECT_DIR}/tests_api"
-    rm -rf "$TESTS_API_DIR"
-    git clone --depth 1 https://gitlab.syncad.com/hive/tests_api.git "$TESTS_API_DIR"
-    echo -e "\e[0Ksection_end:$(date +%s):tests_api\r\e[0K"
-  - !reference [.tavern_install_deps, script]
-  - |
-    # Install tests_api for validate_response module (required by tavern tests)
-    . venv/bin/activate
-    pip install -e "${CI_PROJECT_DIR}/tests_api"
   script:
   - |
     cd "${CI_PROJECT_DIR}"
     . venv/bin/activate
     # Run pytest from project root so validate_response can write to correct paths
-    # (validate_response writes to paths like tests/tavern/get_reputation/file.out.json)
     REPTRACKER_ADDRESS=docker pytest -n ${PYTEST_WORKERS} --junitxml "${TAVERN_DIR}/report.xml" "${TAVERN_DIR}"
   artifacts:
     paths:
