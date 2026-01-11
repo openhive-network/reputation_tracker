@@ -557,15 +557,14 @@ sync:
     - !reference [.haf_app_dind_tavern_tests, before_script]
     - |
       echo -e "\e[0Ksection_start:$(date +%s):tests_api[collapsed=true]\r\e[0KCloning tests_api repository..."
-      cd "${CI_PROJECT_DIR}"
       TESTS_API_DIR="${CI_PROJECT_DIR}/tests_api"
       rm -rf "$TESTS_API_DIR"
       git clone --depth 1 https://gitlab.syncad.com/hive/tests_api.git "$TESTS_API_DIR"
-      echo -e "\e[0Ksection_end:$(date +%s):tests_api\r\e[0K"
-    - |
       # Install tests_api for validate_response module (required by tavern tests)
-      . venv/bin/activate
+      # venv is in docker/ dir (created by compose_startup -> tavern_install_deps)
+      . "${CI_PROJECT_DIR}/docker/venv/bin/activate"
       pip install -e "${CI_PROJECT_DIR}/tests_api"
+      echo -e "\e[0Ksection_end:$(date +%s):tests_api\r\e[0K"
   tags:
     - data-cache-storage
     - standard
@@ -689,7 +688,7 @@ pattern-test:
   script:
   - |
     cd "${CI_PROJECT_DIR}"
-    . venv/bin/activate
+    . docker/venv/bin/activate
     # Run pytest from project root so validate_response can write to correct paths
     REPTRACKER_ADDRESS=docker pytest -n ${PYTEST_WORKERS} --junitxml "${TAVERN_DIR}/report.xml" "${TAVERN_DIR}"
   artifacts:
