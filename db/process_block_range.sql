@@ -69,7 +69,8 @@ operations_in_range AS MATERIALIZED (
 -----------------------------------------------------------------------------------
 -- CROSS JOIN LATERAL parses each operation's JSON body.
 -- Inline CASE avoids wrapper function overhead (process_vote_impacting_operations).
-vote_operations_raw AS (
+-- MATERIALIZED prevents multiple scans that would re-execute JSON parsing.
+vote_operations_raw AS MATERIALIZED (
   SELECT
     ev.author,
     ev.voter,
