@@ -116,11 +116,35 @@ export GIT_LAST_COMMIT_DATE
 
 docker buildx bake --provenance=false --progress="$PROGRESS_DISPLAY" "$TARGET"
 
+# Build postgrest-rewriter with standardized tagging
+# Same tagging convention as main image: short SHA + latest (develop) + version (tags)
 REWRITER_TARGET=without_tag
-if [ -n "$BASE_TAG" ]; then
-  REWRITER_TARGET=with_tag
-  TAG_BUILD_ARGS="--build-arg GIT_COMMIT_TAG=$BASE_TAG"
+TAG_BUILD_ARGS=""
+REWRITER_TAGS=""
+
+# Always tag with short SHA
+if [ -n "${CI_COMMIT_SHORT_SHA:-}" ]; then
+  REWRITER_TAGS="--tag $CI_REGISTRY_IMAGE/postgrest-rewriter:$CI_COMMIT_SHORT_SHA"
 fi
+
+# Tag with 'latest' on develop branch
+if [ "${CI_COMMIT_BRANCH:-}" = "${CI_DEFAULT_BRANCH:-develop}" ]; then
+  REWRITER_TAGS="$REWRITER_TAGS --tag $CI_REGISTRY_IMAGE/postgrest-rewriter:latest"
+fi
+
+# Tag with version on protected tags
+if [ -n "${CI_COMMIT_TAG:-}" ]; then
+  REWRITER_TARGET=with_tag
+  TAG_BUILD_ARGS="--build-arg GIT_COMMIT_TAG=$CI_COMMIT_TAG"
+  REWRITER_TAGS="$REWRITER_TAGS --tag $CI_REGISTRY_IMAGE/postgrest-rewriter:$CI_COMMIT_TAG"
+fi
+
+# Fallback for local builds (use BASE_TAG if no CI variables)
+if [ -z "$REWRITER_TAGS" ] && [ -n "$BASE_TAG" ]; then
+  REWRITER_TAGS="--tag $CI_REGISTRY_IMAGE/postgrest-rewriter:$BASE_TAG"
+fi
+
+echo "Building postgrest-rewriter with tags: $REWRITER_TAGS"
 
 # shellcheck disable=SC2086
 docker buildx build \
@@ -132,9 +156,8 @@ docker buildx build \
     --build-arg GIT_LAST_COMMIT_DATE="$GIT_LAST_COMMIT_DATE" \
     --target=$REWRITER_TARGET \
     $TAG_BUILD_ARGS \
-    --tag "$CI_REGISTRY_IMAGE/postgrest-rewriter:$BASE_TAG" \
-    --load \
+    $REWRITER_TAGS \
+    --push \
     --file Dockerfile.rewriter .
-docker push "$CI_REGISTRY_IMAGE/postgrest-rewriter:$BASE_TAG"
 
 popd

@@ -717,16 +717,17 @@ deploy_python_api_packages_to_gitlab:
   - public-runner-docker
   - standard
 
-build_and_publish_image:
-  stage: publish
-  extends: .publish_docker_image_template
-  before_script:
-  - !reference [.publish_docker_image_template, before_script]
-  script:
-  - scripts/ci-helpers/build_and_publish_instance.sh
+# Publish images to external registry (registry.hive.blog)
+# Uses pull/retag/push pattern - NO rebuilding
+# Images are pulled from GitLab using the protected tag, then pushed to hive.blog
+publish_images:
+  extends: .docker_publish_job_template
+  variables:
+    # Main image + postgrest-rewriter
+    PUBLISH_IMAGES: "reputation_tracker postgrest-rewriter"
   tags:
   - public-runner-docker
-  - bigjob
+  - standard
 
 deploy-wax-spec-dev-package:
   extends: .npm_deploy_package_template
