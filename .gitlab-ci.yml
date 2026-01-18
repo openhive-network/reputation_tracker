@@ -710,7 +710,6 @@ build_and_publish_image:
   - scripts/ci-helpers/build_and_publish_instance.sh
   tags:
   - public-runner-docker
-  - bigjob
 
 deploy-wax-spec-dev-package:
   extends: .npm_deploy_package_template
