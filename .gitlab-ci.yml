@@ -323,6 +323,7 @@ prepare_haf_data:
   # Note: The .prepare_haf_data_5m template already has caching logic
   # that skips replay if data exists. No additional skip logic needed.
   tags:
+  - public-runner-docker
   - data-cache-storage
   - fast
 
@@ -462,6 +463,7 @@ sync:
   after_script: !reference [.haf_app_sync_cleanup, after_script]
   artifacts: !reference [.haf_app_sync_artifacts, artifacts]
   tags:
+  - public-runner-docker
   - data-cache-storage
   - fast
 
@@ -524,6 +526,7 @@ sync:
       - docker/container-logs.tar.gz
     expire_in: 1 week
   tags:
+    - public-runner-docker
     - data-cache-storage
     - fast
 
@@ -555,6 +558,7 @@ sync:
       pip install -e "${CI_PROJECT_DIR}/tests_api"
       echo -e "\e[0Ksection_end:$(date +%s):tests_api\r\e[0K"
   tags:
+    - public-runner-docker
     - data-cache-storage
     - fast
 
@@ -755,5 +759,6 @@ cleanup_haf_cache_manual:
   variables:
     CLEANUP_PATH_PATTERN: "${DATA_CACHE_HAF_PREFIX}_*"
   tags:
+  - public-runner-docker
   - data-cache-storage
   - fast
