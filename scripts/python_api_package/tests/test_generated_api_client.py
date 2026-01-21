@@ -2,16 +2,22 @@ from __future__ import annotations
 
 from typing import Final
 
+from beekeepy._communication.is_url_reachable import async_get_first_reachable_url
 from beekeepy._communication.url import HttpUrl
 
 from tests.api_caller import ReputationApiCaller
 
-DEFAULT_ENDPOINT_FOR_TESTS: Final[HttpUrl] = HttpUrl("https://api.hive.blog")
+FALLBACK_ENDPOINTS: Final[list[HttpUrl]] = [
+    HttpUrl("https://api.syncad.com"),
+    HttpUrl("https://api.hive.blog"),
+]
 SEARCHED_ACCOUNT_IN_TESTS: Final[str] = "gtg"
+
 
 async def test_generated_api_client():
     # ARRANGE
-    api_caller = ReputationApiCaller(endpoint_url=DEFAULT_ENDPOINT_FOR_TESTS)
+    endpoint = await async_get_first_reachable_url(FALLBACK_ENDPOINTS)
+    api_caller = ReputationApiCaller(endpoint_url=endpoint)
 
     # ACT
     async with api_caller as api:
