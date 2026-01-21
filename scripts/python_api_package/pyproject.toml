@@ -27,7 +27,7 @@ source = [
 
 [tool.poetry.dependencies]
 python = ">=3.14,<4"
-hiveio-beekeepy = "1.28.4.dev7+c04687a"
+hiveio-beekeepy = "1.28.4.dev23+7dea42b"
 hiveio-schemas = "1.28.1.dev3+ae54493"
 # Use Python 3.14 branch version that uses msgspec instead of pydantic
 api_client_generator = "1.7.1.dev4+6fe5c3e.dirty"
