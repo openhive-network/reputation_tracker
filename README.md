@@ -66,6 +66,57 @@ Reputation Tracker uses a two-tier architecture:
 | `reptracker_backend` | `reptracker_owner` | Backend helper functions (parsers, utilities) |
 | `reptracker_endpoints` | `reptracker_user` | PostgREST-exposed API functions |
 
+## Reputation Processing
+
+### How Reputation is Calculated
+
+Reputation changes are derived from vote weight (rshares) using a dampening formula:
+
+```
+reputation_change = rshares >> 6  (equivalent to rshares / 64)
+```
+
+The 6-bit right shift prevents high-stake votes from dominating reputation. Raw reputation values are then transformed for display:
+
+```
+display_score = (log10(abs(raw_reputation)) - 9) * 9 + 25
+if negative: display_score = -display_score
+```
+
+This produces scores roughly in the 25-75 range for typical accounts.
+
+### Vote Processing
+
+Votes are processed in blockchain order (critical requirement). Each vote's effect depends on the voter's reputation at that moment. When a vote is changed:
+1. The previous vote's impact is undone
+2. The new vote's impact is applied
+
+### Operations That Affect Reputation
+
+| Operation | Op Type | Effect |
+|-----------|---------|--------|
+| `effective_comment_vote` | 72 | Vote cast or changed - applies reputation change based on rshares |
+| `delete_comment` | 17 | Post deleted - votes are removed from tracking (reputation preserved) |
+| `comment_payout_update` | 61 | Post paid out - votes are finalized and removed from tracking |
+
+### Reputation Gate Rules
+
+| Rule | Description |
+|------|-------------|
+| Voter reputation gate | Only votes from accounts with non-negative reputation count |
+| Downvote restriction | Voter must have explicit reputation AND higher rep than target |
+| Upvote freedom | Always applied if voter has >= 0 reputation |
+| Implicit accounts | New accounts start with `is_implicit=TRUE` until first counted vote |
+
+### Key Functions
+
+| Function | File | Purpose |
+|----------|------|---------|
+| `reptracker_block_range_data()` | `db/process_block_range.sql` | Main processing CTE chain |
+| `calculate_account_reputations()` | `db/calculate_account_reputations.sql` | Per-vote reputation calculation |
+| `process_effective_vote_operation()` | `backend/operation_parsers/vote_operations.sql` | Parse vote JSON |
+| `main()` | `db/reptracker_app.sql` | Processing entry point |
+
 ## Quick Start with Docker
 
 The fastest way to run Reputation Tracker with a demo dataset (5M blocks):
@@ -261,20 +312,108 @@ The GitLab CI pipeline runs all test suites automatically. Key jobs:
 - `performance-test` - Load tests
 - `regression-test` - Reputation comparison tests
 
-## API Examples
+## API / Functions
+
+### Overview
+
+Reptracker exposes reputation data in two ways:
+- **Standalone API**: Direct REST endpoints at `/reputation-api/`
+- **HAFBE Integration**: SQL functions called by HAF Block Explorer's unified account endpoint
+
+### Available Endpoints
+
+| Endpoint | Method | Function | Returns |
+|----------|--------|----------|---------|
+| `/accounts/{account-name}/reputation` | GET | `get_account_reputation(TEXT)` | Reputation score (INT) |
+| `/last-synced-block` | GET | `get_rep_last_synced_block()` | Last processed block (INT) |
+| `/version` | GET | `get_reptracker_version()` | Git commit hash (TEXT) |
+
+### Available Functions
+
+| Function | Schema | Parameters | Returns | Description |
+|----------|--------|------------|---------|-------------|
+| `get_account_reputation` | `reptracker_endpoints` | account_name TEXT | INT | Calculate and return reputation score |
+| `get_rep_last_synced_block` | `reptracker_endpoints` | (none) | INT | Get last processed block number |
+| `get_reptracker_version` | `reptracker_endpoints` | (none) | TEXT | Get application version |
+
+### Usage Examples
+
+#### REST API Calls
 
 ```bash
-# Get account reputation
-curl -X POST http://localhost:3000/rpc/get_reputation \
-  -H "Content-Type: application/json" \
-  -d '{"_account": "gtg"}'
+# Get account reputation (standalone)
+curl http://localhost:3000/reputation-api/accounts/blocktrades/reputation
 
 # Get sync status
-curl http://localhost:3000/rpc/get_rep_last_synced_block
+curl http://localhost:3000/reputation-api/last-synced-block
 
 # Get version
-curl http://localhost:3000/rpc/get_rep_version
+curl http://localhost:3000/reputation-api/version
+
+# Get OpenAPI spec
+curl http://localhost:3000/reputation-api/
 ```
+
+#### SQL Function Calls
+
+```sql
+-- Get reputation for an account
+SELECT * FROM reptracker_endpoints.get_account_reputation('blocktrades');
+-- Returns: 69
+
+-- Get last synced block
+SELECT * FROM reptracker_endpoints.get_rep_last_synced_block();
+-- Returns: 5000000
+
+-- Get version
+SELECT * FROM reptracker_endpoints.get_reptracker_version();
+-- Returns: 'c2fed8958584511ef1a66dab3dbac8c40f3518f0'
+```
+
+### Reputation Score Interpretation
+
+| Score Range | Meaning |
+|-------------|---------|
+| 0 | New account or never received votes |
+| 25 | Starting reputation (after first vote) |
+| 25-40 | New/growing account |
+| 40-60 | Established account |
+| 60-75+ | Highly reputable account |
+| Negative | Account has been heavily downvoted |
+
+### HAFBE Integration
+
+When running as part of HAF Block Explorer, reputation is included in account queries:
+
+```bash
+# Via HAFBE unified endpoint
+curl http://localhost:3000/hafbe-api/accounts/blocktrades
+# Returns full account object including reputation field
+```
+
+## Integration with HAF Block Explorer
+
+Reputation Tracker is a submodule of [HAF Block Explorer (HAFBE)](https://gitlab.syncad.com/hive/haf_block_explorer). HAFBE provides comprehensive blockchain data access, including account reputation via reptracker.
+
+### How HAFBE Uses reptracker
+
+1. HAFBE includes reptracker as a git submodule
+2. During installation, HAFBE installs the reptracker schema alongside its own
+3. HAFBE API calls `reptracker_endpoints.get_account_reputation()` to fetch reputation
+4. Reputation syncs automatically alongside HAFBE's other data
+
+### Standalone vs HAFBE Usage
+
+| Mode | Use Case |
+|------|----------|
+| **Standalone** | Direct reputation queries, dedicated reputation service |
+| **With HAFBE** | Full block explorer with reputation integrated into account data |
+
+When running standalone, reptracker provides a focused API for reputation queries. When integrated with HAFBE, reputation data is available through HAFBE's unified account endpoints.
+
+## Contributing
+
+See the project's GitLab page for contribution guidelines and issue tracking.
 
 ## License
 
