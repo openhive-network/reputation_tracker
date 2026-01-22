@@ -191,32 +191,7 @@ lint_sql_scripts:
   stage: lint
 
 # Note: HAF image is now dynamically detected by find_haf_image job.
-# No manual validation needed.
-
-# Use existing HAF image from registry (no submodule needed)
-prepare_haf_image:
-  stage: build
-  image: alpine:latest
-  needs:
-    - job: find_haf_image
-      artifacts: true
-  script:
-    - |
-      # Use dynamically detected HAF image from find_haf_image job
-      echo "Using HAF image: ${HAF_UPSTREAM_IMAGE}"
-      echo "HAF commit: ${HAF_UPSTREAM_COMMIT}"
-      # Export image name and tag for Docker Compose scripts
-      echo "HAF_IMAGE_NAME=${HAF_UPSTREAM_IMAGE}" > docker_image_name.env
-      echo "HAF_REGISTRY_TAG=${HAF_UPSTREAM_TAG}" >> docker_image_name.env
-      # Also export HAF_COMMIT for cache key compatibility
-      echo "HAF_COMMIT=${HAF_UPSTREAM_COMMIT}" >> docker_image_name.env
-  artifacts:
-    reports:
-      dotenv: docker_image_name.env
-    paths:
-      - docker_image_name.env
-  tags:
-  - public-runner-docker
+# Jobs use HAF_UPSTREAM_* variables directly (mapped to HAF_* where needed).
 
 extract-swagger-json:
   extends: .filter_out_swagger_json
@@ -275,20 +250,14 @@ generate-wax-spec:
   - public-runner-docker
 
 prepare_haf_data:
-  extends: .prepare_haf_data_5m
-  needs:
-  - job: detect_changes
-    artifacts: true
-    optional: true
-  - job: prepare_haf_image
-    artifacts: true
+  extends: .haf_app_prepare_data_with_find
   stage: build
   timeout: 80m
   variables:
     BLOCK_LOG_SOURCE_DIR: $BLOCK_LOG_SOURCE_DIR_5M
-    # Config fetched from hive repo by template if not specified locally
-  # Note: The .prepare_haf_data_5m template already has caching logic
-  # that skips replay if data exists. No additional skip logic needed.
+    # Map HAF_UPSTREAM_* from find_haf_image to HAF_* expected by template
+    HAF_IMAGE_NAME: "${HAF_UPSTREAM_IMAGE}"
+    HAF_COMMIT: "${HAF_UPSTREAM_COMMIT}"
   tags:
   - public-runner-docker
   - data-cache-storage
@@ -367,13 +336,16 @@ sync:
   - job: detect_changes
     artifacts: true
     optional: true
-  - job: prepare_haf_image
+  - job: find_haf_image
     artifacts: true
   - job: prepare_haf_data
     artifacts: true
   - docker-setup-docker-image-build
   - docker-ci-runner-build
   variables:
+    # Map HAF_UPSTREAM_* from find_haf_image to HAF_* for cache key and docker-compose
+    HAF_IMAGE_NAME: "${HAF_UPSTREAM_IMAGE}"
+    HAF_COMMIT: "${HAF_UPSTREAM_COMMIT}"
     BACKEND_VERSION: "$CI_COMMIT_SHORT_SHA"
     POSTGRES_ACCESS: postgresql://haf_admin@docker:5432/haf_block_log
     COMPOSE_OPTIONS_STRING: --env-file ci.env --file docker-compose.yml --file overrides/dev.yml
@@ -561,10 +533,13 @@ regression-test:
     artifacts: true
   - job: docker-setup-docker-image-build
     artifacts: true
-  - job: prepare_haf_image
+  - job: find_haf_image
     artifacts: true
   - job: docker-ci-runner-build
     artifacts: true
+  variables:
+    HAF_IMAGE_NAME: "${HAF_UPSTREAM_IMAGE}"
+    HAF_COMMIT: "${HAF_UPSTREAM_COMMIT}"
   script:
   - |
     echo -e "\e[0Ksection_start:$(date +%s):tests\r\e[0KRunning tests..."
@@ -588,10 +563,13 @@ setup-scripts-test:
     artifacts: true
   - job: docker-setup-docker-image-build
     artifacts: true
-  - job: prepare_haf_image
+  - job: find_haf_image
     artifacts: true
   - job: docker-ci-runner-build
     artifacts: true
+  variables:
+    HAF_IMAGE_NAME: "${HAF_UPSTREAM_IMAGE}"
+    HAF_COMMIT: "${HAF_UPSTREAM_COMMIT}"
   script:
   - |
     echo -e "\e[0Ksection_start:$(date +%s):tests\r\e[0KRunning tests..."
@@ -614,10 +592,13 @@ performance-test:
     artifacts: true
   - job: docker-setup-docker-image-build
     artifacts: true
-  - job: prepare_haf_image
+  - job: find_haf_image
     artifacts: true
   - job: docker-ci-runner-build
     artifacts: true
+  variables:
+    HAF_IMAGE_NAME: "${HAF_UPSTREAM_IMAGE}"
+    HAF_COMMIT: "${HAF_UPSTREAM_COMMIT}"
   script:
   - |
     echo -e "\e[0Ksection_start:$(date +%s):tests\r\e[0KRunning tests..."
@@ -646,10 +627,13 @@ pattern-test:
     artifacts: true
   - job: docker-setup-docker-image-build
     artifacts: true
-  - job: prepare_haf_image
+  - job: find_haf_image
     artifacts: true
   - job: docker-ci-runner-build
     artifacts: true
+  variables:
+    HAF_IMAGE_NAME: "${HAF_UPSTREAM_IMAGE}"
+    HAF_COMMIT: "${HAF_UPSTREAM_COMMIT}"
   script:
   - |
     cd "${CI_PROJECT_DIR}"
