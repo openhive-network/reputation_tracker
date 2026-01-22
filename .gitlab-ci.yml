@@ -346,6 +346,7 @@ sync:
     # Map HAF_UPSTREAM_* from find_haf_image to HAF_* for cache key and docker-compose
     HAF_IMAGE_NAME: "${HAF_UPSTREAM_IMAGE}"
     HAF_COMMIT: "${HAF_UPSTREAM_COMMIT}"
+    HAF_REGISTRY_TAG: "${HAF_UPSTREAM_TAG}"
     BACKEND_VERSION: "$CI_COMMIT_SHORT_SHA"
     POSTGRES_ACCESS: postgresql://haf_admin@docker:5432/haf_block_log
     COMPOSE_OPTIONS_STRING: --env-file ci.env --file docker-compose.yml --file overrides/dev.yml
@@ -540,6 +541,7 @@ regression-test:
   variables:
     HAF_IMAGE_NAME: "${HAF_UPSTREAM_IMAGE}"
     HAF_COMMIT: "${HAF_UPSTREAM_COMMIT}"
+    HAF_REGISTRY_TAG: "${HAF_UPSTREAM_TAG}"
   script:
   - |
     echo -e "\e[0Ksection_start:$(date +%s):tests\r\e[0KRunning tests..."
@@ -570,6 +572,7 @@ setup-scripts-test:
   variables:
     HAF_IMAGE_NAME: "${HAF_UPSTREAM_IMAGE}"
     HAF_COMMIT: "${HAF_UPSTREAM_COMMIT}"
+    HAF_REGISTRY_TAG: "${HAF_UPSTREAM_TAG}"
   script:
   - |
     echo -e "\e[0Ksection_start:$(date +%s):tests\r\e[0KRunning tests..."
@@ -599,6 +602,7 @@ performance-test:
   variables:
     HAF_IMAGE_NAME: "${HAF_UPSTREAM_IMAGE}"
     HAF_COMMIT: "${HAF_UPSTREAM_COMMIT}"
+    HAF_REGISTRY_TAG: "${HAF_UPSTREAM_TAG}"
   script:
   - |
     echo -e "\e[0Ksection_start:$(date +%s):tests\r\e[0KRunning tests..."
@@ -634,6 +638,7 @@ pattern-test:
   variables:
     HAF_IMAGE_NAME: "${HAF_UPSTREAM_IMAGE}"
     HAF_COMMIT: "${HAF_UPSTREAM_COMMIT}"
+    HAF_REGISTRY_TAG: "${HAF_UPSTREAM_TAG}"
   script:
   - |
     cd "${CI_PROJECT_DIR}"
