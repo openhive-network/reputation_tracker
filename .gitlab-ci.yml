@@ -347,6 +347,7 @@ sync:
     APP_CACHE_KEY: "${REPTRACKER_CACHE_KEY}"
   timeout: 2 hours  # NFS cache push can take 50+ minutes on slow days
   before_script:
+  - !reference [.docker_image_builder_job_template, before_script]
   - !reference [.haf_app_sync_setup, script]
   - !reference [.haf_app_smart_cache_lookup, script]
   script:
