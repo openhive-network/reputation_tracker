@@ -171,6 +171,8 @@ detect_changes:
 find_haf_image:
   extends: .find_haf_image
   stage: detect
+  variables:
+    UPSTREAM_BRANCH: "rm-sub-update-23-01-2026"
 
 # =============================================================================
 # LINT JOBS - Using common-ci-configuration templates
