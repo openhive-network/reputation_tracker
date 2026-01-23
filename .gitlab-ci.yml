@@ -334,6 +334,10 @@ sync:
     artifacts: true
   - docker-setup-docker-image-build
   variables:
+    # Docker connection for Ubuntu-based haf-app-test-runner (connects to DinD service)
+    DOCKER_HOST: tcp://docker:2376
+    DOCKER_CERT_PATH: /certs/client
+    DOCKER_TLS_VERIFY: "1"
     # Map HAF_UPSTREAM_* from find_haf_image to HAF_* for cache key and docker-compose
     HAF_IMAGE_NAME: "${HAF_UPSTREAM_IMAGE}"
     HAF_COMMIT: "${HAF_UPSTREAM_COMMIT}"
@@ -347,7 +351,6 @@ sync:
     APP_CACHE_KEY: "${REPTRACKER_CACHE_KEY}"
   timeout: 2 hours  # NFS cache push can take 50+ minutes on slow days
   before_script:
-  - !reference [.docker_image_builder_job_template, before_script]
   - !reference [.haf_app_sync_setup, script]
   - !reference [.haf_app_smart_cache_lookup, script]
   script:
@@ -419,6 +422,10 @@ sync:
   stage: test
   image: ${HAF_APP_TEST_RUNNER_IMAGE}
   variables:
+    # Docker connection for Ubuntu-based haf-app-test-runner (connects to DinD service)
+    DOCKER_HOST: tcp://docker:2376
+    DOCKER_CERT_PATH: /certs/client
+    DOCKER_TLS_VERIFY: "1"
     COMPOSE_OPTIONS_STRING: "--file docker-compose-test.yml --ansi never"
   timeout: 30 minutes
   before_script:
@@ -476,6 +483,10 @@ sync:
     - .haf_app_dind_tavern_tests
   image: ${HAF_APP_TEST_RUNNER_IMAGE}
   variables:
+    # Docker connection for Ubuntu-based haf-app-test-runner (connects to DinD service)
+    DOCKER_HOST: tcp://docker:2376
+    DOCKER_CERT_PATH: /certs/client
+    DOCKER_TLS_VERIFY: "1"
     REPTRACKER_ADDRESS: localhost
     REPTRACKER_PORT: 3000
     PYTEST_WORKERS: "16"
