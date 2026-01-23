@@ -66,9 +66,6 @@ if [[ -n $BASE_TAG ]]; then
     default|full|full-ci)
       export TAG=$BASE_TAG
       ;;
-    ci-runner|ci-runner-ci)
-      export TAG_CI=$BASE_TAG
-      ;;
   esac
 fi
 
