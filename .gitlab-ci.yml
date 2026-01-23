@@ -8,11 +8,6 @@ stages:
 - publish
 
 variables:
-  # Variables required by Common CI jobs
-  CI_COMMON_JOB_VERSION: "3dd346380da7f28cdaf3ef3955559c905d94bd1c"
-  DOCKER_BUILDER_TAG: "$CI_COMMON_JOB_VERSION"
-  DOCKER_DIND_TAG: "$CI_COMMON_JOB_VERSION"
-  IMAGE_REMOVER_TAG: "$CI_COMMON_JOB_VERSION"
   # Git configuration
   # Fetch strategy reuses workspace between jobs, reducing GitLab server load.
   # Full clone (depth 0) enables efficient incremental fetches - shallow clones
