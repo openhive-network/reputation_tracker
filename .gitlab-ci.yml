@@ -44,6 +44,8 @@ variables:
   # uses registry.gitlab.syncad.com/hive/hive/ci-base-image:ubuntu24.04-py3.14-1
   PYTHON_IMAGE_TAG: "@sha256:64bc6a41d7811e6caace5fed8c82ca1ee6c26bfdcae8b29546d830a63bfe1f17"
   PYTHON_IMAGE: "registry.gitlab.syncad.com/hive/hive/ci-base-image${PYTHON_IMAGE_TAG}"
+  # Shared HAF app test runner with Python 3.14, Docker CLI, JMeter (from common-ci-configuration)
+  HAF_APP_TEST_RUNNER_IMAGE: "registry.gitlab.syncad.com/hive/common-ci-configuration/haf-app-test-runner:2.1"
   # Python 3.14 compatibility - allow PyO3-based packages to build
   PYO3_USE_ABI3_FORWARD_COMPATIBILITY: "1"
   # =============================================================================
@@ -304,16 +306,6 @@ prepare_haf_data:
   tags:
   - bigjob
 
-docker-ci-runner-build:
-  extends: .docker-build-template
-  variables:
-    BASE_REPO_NAME: ""
-    BASE_TAG: "docker-24.0.1-8"
-    NAME: "ci-runner"
-    TARGET: "ci-runner-ci"
-  tags:
-  - public-runner-docker
-
 docker-setup-docker-image-build:
   extends: .docker-build-template
   variables:
@@ -331,7 +323,7 @@ sync:
   - .docker_image_builder_job_template
   - .haf_app_sync_variables
   stage: sync
-  image: registry.gitlab.syncad.com/hive/reputation_tracker/ci-runner:docker-24.0.1-8
+  image: ${HAF_APP_TEST_RUNNER_IMAGE}
   needs:
   - job: detect_changes
     artifacts: true
@@ -341,7 +333,6 @@ sync:
   - job: prepare_haf_data
     artifacts: true
   - docker-setup-docker-image-build
-  - docker-ci-runner-build
   variables:
     # Map HAF_UPSTREAM_* from find_haf_image to HAF_* for cache key and docker-compose
     HAF_IMAGE_NAME: "${HAF_UPSTREAM_IMAGE}"
@@ -425,7 +416,7 @@ sync:
     - .docker_image_builder_job_template
     - .haf_app_dind_test_variables
   stage: test
-  image: registry.gitlab.syncad.com/hive/reputation_tracker/ci-runner:docker-24.0.1-8
+  image: ${HAF_APP_TEST_RUNNER_IMAGE}
   variables:
     COMPOSE_OPTIONS_STRING: "--file docker-compose-test.yml --ansi never"
   timeout: 30 minutes
@@ -482,7 +473,7 @@ sync:
   extends:
     - .docker_image_builder_job_template
     - .haf_app_dind_tavern_tests
-  image: registry.gitlab.syncad.com/hive/reputation_tracker/ci-runner:docker-24.0.1-8
+  image: ${HAF_APP_TEST_RUNNER_IMAGE}
   variables:
     REPTRACKER_ADDRESS: localhost
     REPTRACKER_PORT: 3000
@@ -536,8 +527,6 @@ regression-test:
     artifacts: true
   - job: find_haf_image
     artifacts: true
-  - job: docker-ci-runner-build
-    artifacts: true
   variables:
     HAF_IMAGE_NAME: "${HAF_UPSTREAM_IMAGE}"
     HAF_COMMIT: "${HAF_UPSTREAM_COMMIT}"
@@ -567,8 +556,6 @@ setup-scripts-test:
     artifacts: true
   - job: find_haf_image
     artifacts: true
-  - job: docker-ci-runner-build
-    artifacts: true
   variables:
     HAF_IMAGE_NAME: "${HAF_UPSTREAM_IMAGE}"
     HAF_COMMIT: "${HAF_UPSTREAM_COMMIT}"
@@ -596,8 +583,6 @@ performance-test:
   - job: docker-setup-docker-image-build
     artifacts: true
   - job: find_haf_image
-    artifacts: true
-  - job: docker-ci-runner-build
     artifacts: true
   variables:
     HAF_IMAGE_NAME: "${HAF_UPSTREAM_IMAGE}"
@@ -632,8 +617,6 @@ pattern-test:
   - job: docker-setup-docker-image-build
     artifacts: true
   - job: find_haf_image
-    artifacts: true
-  - job: docker-ci-runner-build
     artifacts: true
   variables:
     HAF_IMAGE_NAME: "${HAF_UPSTREAM_IMAGE}"

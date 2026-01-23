@@ -40,9 +40,8 @@ There are several targets defined in the Bakefile
 - *default* - alias for *full*
 - *psql-client* - builds psql client image
 - *full* - builds full image
-- *ci-runner* - builds CI runner
 
-There are also some other targets meant to be used by CI only: *ci-runner-ci*, *full-ci*
+There is also a *full-ci* target meant to be used by CI only.
 
 To build a given target run `docker buildx bake [target-name]`. If no target name is provided the *default* target will be built.
 
