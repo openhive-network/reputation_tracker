@@ -52,6 +52,7 @@ variables:
   #
   # Output variables (set by find_haf_image job):
   #   HAF_UPSTREAM_IMAGE, HAF_UPSTREAM_COMMIT, HAF_UPSTREAM_TAG
+  #   HAF_IMAGE_NAME, HAF_COMMIT (convenience aliases)
   # Enable CI-specific PostgreSQL config with reduced memory for HAF service containers
   HAF_CI_MODE: "1"
   # Common CI configuration reference
@@ -252,9 +253,7 @@ prepare_haf_data:
   timeout: 80m
   variables:
     BLOCK_LOG_SOURCE_DIR: $BLOCK_LOG_SOURCE_DIR_5M
-    # Map HAF_UPSTREAM_* from find_haf_image to HAF_* expected by template
-    HAF_IMAGE_NAME: "${HAF_UPSTREAM_IMAGE}"
-    HAF_COMMIT: "${HAF_UPSTREAM_COMMIT}"
+    # HAF_IMAGE_NAME and HAF_COMMIT are now provided directly by find_haf_image
   tags:
   - public-runner-docker
   - data-cache-storage
@@ -333,9 +332,7 @@ sync:
     DOCKER_HOST: tcp://docker:2376
     DOCKER_CERT_PATH: /certs/client
     DOCKER_TLS_VERIFY: "1"
-    # Map HAF_UPSTREAM_* from find_haf_image to HAF_* for cache key and docker-compose
-    HAF_IMAGE_NAME: "${HAF_UPSTREAM_IMAGE}"
-    HAF_COMMIT: "${HAF_UPSTREAM_COMMIT}"
+    # HAF_IMAGE_NAME and HAF_COMMIT are now provided directly by find_haf_image
     HAF_REGISTRY_TAG: "${HAF_UPSTREAM_TAG}"
     BACKEND_VERSION: "$CI_COMMIT_SHORT_SHA"
     POSTGRES_ACCESS: postgresql://haf_admin@docker:5432/haf_block_log
@@ -535,8 +532,7 @@ regression-test:
   - job: find_haf_image
     artifacts: true
   variables:
-    HAF_IMAGE_NAME: "${HAF_UPSTREAM_IMAGE}"
-    HAF_COMMIT: "${HAF_UPSTREAM_COMMIT}"
+    # HAF_IMAGE_NAME, HAF_COMMIT provided by find_haf_image; HAF_REGISTRY_TAG is an alias
     HAF_REGISTRY_TAG: "${HAF_UPSTREAM_TAG}"
   script:
   - |
@@ -564,8 +560,7 @@ setup-scripts-test:
   - job: find_haf_image
     artifacts: true
   variables:
-    HAF_IMAGE_NAME: "${HAF_UPSTREAM_IMAGE}"
-    HAF_COMMIT: "${HAF_UPSTREAM_COMMIT}"
+    # HAF_IMAGE_NAME, HAF_COMMIT provided by find_haf_image; HAF_REGISTRY_TAG is an alias
     HAF_REGISTRY_TAG: "${HAF_UPSTREAM_TAG}"
   script:
   - |
@@ -592,8 +587,7 @@ performance-test:
   - job: find_haf_image
     artifacts: true
   variables:
-    HAF_IMAGE_NAME: "${HAF_UPSTREAM_IMAGE}"
-    HAF_COMMIT: "${HAF_UPSTREAM_COMMIT}"
+    # HAF_IMAGE_NAME, HAF_COMMIT provided by find_haf_image; HAF_REGISTRY_TAG is an alias
     HAF_REGISTRY_TAG: "${HAF_UPSTREAM_TAG}"
   script:
   - |
@@ -626,8 +620,7 @@ pattern-test:
   - job: find_haf_image
     artifacts: true
   variables:
-    HAF_IMAGE_NAME: "${HAF_UPSTREAM_IMAGE}"
-    HAF_COMMIT: "${HAF_UPSTREAM_COMMIT}"
+    # HAF_IMAGE_NAME, HAF_COMMIT provided by find_haf_image; HAF_REGISTRY_TAG is an alias
     HAF_REGISTRY_TAG: "${HAF_UPSTREAM_TAG}"
   script:
   - |
