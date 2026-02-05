@@ -20,9 +20,7 @@ include = [
 ]
 source = [
     { name = "PyPI", priority = "primary" },
-    { name = "gitlab-schemas", url = "https://gitlab.syncad.com/api/v4/projects/362/packages/pypi/simple", priority = "supplemental" },
-    { name = "gitlab-beekeepy", url = "https://gitlab.syncad.com/api/v4/projects/434/packages/pypi/simple", priority = "supplemental" },
-    { name = "gitlab-api_client_generator", url = "https://gitlab.syncad.com/api/v4/projects/484/packages/pypi/simple", priority = "supplemental" },
+    { name = "gitlab-hive", url = "https://gitlab.syncad.com/api/v4/groups/136/-/packages/pypi/simple", priority = "supplemental" },
 ]
 
 [tool.poetry.dependencies]
@@ -35,7 +33,7 @@ pydantic = "1.10.25"
 [tool.poetry.group.dev.dependencies]
 pytest = "8.3.5"
 pytest-asyncio = "0.25.3"
-hiveio-beekeepy = "1.28.4.dev23+7dea42b"
+hiveio-beekeepy = "1.28.5"
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
