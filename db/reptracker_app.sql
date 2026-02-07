@@ -226,10 +226,14 @@ $$;
 /**
  * do_rep_indexes_exist()
  * ----------------------
- * Check if required HAF indexes for vote operations exist and are valid.
- * Used to verify database is properly configured for reputation tracking.
+ * Check if the partial op_type index for reputation tracker exists and is valid.
+ * The index is created by db/create_indexes.sql via hive.create_op_type_partial_index().
+ * Index name convention: hive_operations_op_types_{id1}_{id2}_{id3}_idx (sorted IDs).
  *
- * @returns TRUE if all required indexes exist and are valid, FALSE otherwise
+ * Returns TRUE if:
+ *   - hive.create_op_type_partial_index() is not available (older HAF, no index needed)
+ *   - The partial index exists and is valid
+ * Returns FALSE if the function exists but the index is missing or invalid.
  */
 CREATE OR REPLACE FUNCTION do_rep_indexes_exist()
 RETURNS BOOLEAN
@@ -237,17 +241,42 @@ LANGUAGE 'plpgsql' VOLATILE
 AS
 $$
 DECLARE
-  __result BOOLEAN;
+  __expected_name TEXT;
+  __op_ids SMALLINT[];
 BEGIN
-  SELECT NOT EXISTS(
+  -- If the HAF function doesn't exist, indexes aren't applicable
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_proc p
+    JOIN pg_namespace n ON p.pronamespace = n.oid
+    WHERE n.nspname = 'hive' AND p.proname = 'create_op_type_partial_index'
+  ) THEN
+    RETURN TRUE;
+  END IF;
+
+  -- Build the expected index name from the same op types used in create_indexes.sql
+  SELECT array_agg(id ORDER BY id)
+  INTO __op_ids
+  FROM hafd.operation_types
+  WHERE name IN (
+    'hive::protocol::delete_comment_operation',
+    'hive::protocol::comment_payout_update_operation',
+    'hive::protocol::effective_comment_vote_operation'
+  );
+
+  IF __op_ids IS NULL OR array_length(__op_ids, 1) != 3 THEN
+    RETURN FALSE;
+  END IF;
+
+  __expected_name := 'hive_operations_op_types_' || array_to_string(__op_ids, '_') || '_idx';
+
+  -- Check the index exists and is valid
+  RETURN EXISTS (
     SELECT 1
-    FROM (VALUES ('effective_comment_vote_idx'), ('delete_comment_op_idx')) AS desired_indexes(indexname)
-    LEFT JOIN pg_indexes USING (indexname)
-    LEFT JOIN pg_class ON desired_indexes.indexname = pg_class.relname
-    LEFT JOIN pg_index ON pg_class.oid = indexrelid
-    WHERE pg_indexes.indexname IS NULL OR NOT pg_index.indisvalid
-  ) INTO __result;
-  RETURN __result;
+    FROM pg_indexes pi
+    JOIN pg_class c ON c.relname = pi.indexname
+    JOIN pg_index i ON c.oid = i.indexrelid
+    WHERE pi.indexname = __expected_name AND i.indisvalid
+  );
 END
 $$;
 

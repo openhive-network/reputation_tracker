@@ -33,6 +33,8 @@ REPTRACKER_SCHEMA=${REPTRACKER_SCHEMA:-"reptracker_app"}
 IS_FORKING=${IS_FORKING:-"true"}
 SWAGGER_URL=${SWAGGER_URL:-"{reptracker-host}"}
 POSTGRES_APP_NAME=reptracker_install
+INDEXES_ONLY=false
+SCHEMA_ONLY=false
 
 
 while [ $# -gt 0 ]; do
@@ -54,6 +56,12 @@ while [ $# -gt 0 ]; do
         ;;
     --is_forking=*)
         IS_FORKING="${1#*=}"
+        ;;
+    --indexes-only)
+        INDEXES_ONLY=true
+        ;;
+    --schema-only)
+        SCHEMA_ONLY=true
         ;;
     --help)
         print_help
@@ -77,7 +85,8 @@ done
 
 POSTGRES_ACCESS=${POSTGRES_URL:-"postgresql://$POSTGRES_USER@$POSTGRES_HOST:$POSTGRES_PORT/haf_block_log?application_name=${POSTGRES_APP_NAME}"}
 
-  echo "Installing app..."
+install_schema() {
+  echo "Installing schema..."
   # Core roles and schema setup
   psql "$POSTGRES_ACCESS" -v ON_ERROR_STOP=on -f "$SRCPATH/db/builtin_roles.sql"
   psql "$POSTGRES_ACCESS" -v ON_ERROR_STOP=on -c "SET ROLE reptracker_owner;CREATE SCHEMA IF NOT EXISTS ${REPTRACKER_SCHEMA} AUTHORIZATION reptracker_owner;"
@@ -121,4 +130,19 @@ POSTGRES_ACCESS=${POSTGRES_URL:-"postgresql://$POSTGRES_USER@$POSTGRES_HOST:$POS
   # Allow hived to fulfill vacuum full requests
   psql "$POSTGRES_ACCESS" -v ON_ERROR_STOP=on  -c "SET ROLE reptracker_owner;GRANT MAINTAIN ON ALL TABLES IN SCHEMA ${REPTRACKER_SCHEMA} TO hived_group;"
   psql "$POSTGRES_ACCESS" -v ON_ERROR_STOP=on  -c "SET ROLE reptracker_owner;GRANT ALL ON SCHEMA ${REPTRACKER_SCHEMA} TO hived_group;"
+}
+
+install_indexes() {
+  echo "Creating indexes..."
+  psql "$POSTGRES_ACCESS" -v ON_ERROR_STOP=on -f "$SRCPATH/db/create_indexes.sql"
+}
+
+if [ "$INDEXES_ONLY" = "true" ]; then
+  install_indexes
+elif [ "$SCHEMA_ONLY" = "true" ]; then
+  install_schema
+else
+  install_schema
+  install_indexes
+fi
 
