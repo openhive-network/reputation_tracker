@@ -7,6 +7,11 @@ services:
         "
     ports:
       - 5432:5432
+    healthcheck:
+      interval: 5s
+  backend-block-processing:
+    healthcheck:
+      interval: 5s
 
 volumes:
   haf_datadir:
