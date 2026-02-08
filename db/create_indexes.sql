@@ -21,15 +21,8 @@ BEGIN
         RETURN;
     END IF;
 
-    -- Look up op type IDs by name (no magic numbers)
-    SELECT array_agg(id ORDER BY id)
-    INTO _op_ids
-    FROM hafd.operation_types
-    WHERE name IN (
-        'hive::protocol::delete_comment_operation',
-        'hive::protocol::comment_payout_update_operation',
-        'hive::protocol::effective_comment_vote_operation'
-    );
+    -- Get op type IDs from the shared lookup function
+    _op_ids := reptracker_backend.get_reptracker_op_type_ids();
 
     IF _op_ids IS NULL OR array_length(_op_ids, 1) != 3 THEN
         RAISE WARNING 'Expected 3 operation types, found: %. Index not created.', _op_ids;
