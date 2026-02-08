@@ -32,4 +32,20 @@ BEGIN
 END;
 $$;
 
+-- All reptracker op type IDs as a sorted array (used by index creation and validation)
+CREATE OR REPLACE FUNCTION reptracker_backend.get_reptracker_op_type_ids()
+RETURNS SMALLINT[] LANGUAGE plpgsql STABLE AS $$
+BEGIN
+  RETURN (
+    SELECT array_agg(id ORDER BY id)
+    FROM hafd.operation_types
+    WHERE name IN (
+      'hive::protocol::effective_comment_vote_operation',
+      'hive::protocol::delete_comment_operation',
+      'hive::protocol::comment_payout_update_operation'
+    )
+  );
+END;
+$$;
+
 RESET ROLE;
