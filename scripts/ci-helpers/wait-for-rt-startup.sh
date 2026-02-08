@@ -6,10 +6,10 @@ function print_help () {
 cat <<-EOF
 Usage: $0 [OPTION[=VALUE]]...
 
-Script that waits for Balance Tracker to process 5'000'000 blocks.
+Script that waits for Reputation Tracker to process 5'000'000 blocks.
 To be used in CI.
 OPTIONS:
-    --postgress-access=URL    PostgreSQL URL
+    --postgres-access=URL    PostgreSQL URL
     --help|-h|-?              Display this help screen and exit
 EOF
 }
@@ -34,7 +34,7 @@ MESSAGE="Waiting for Reputation Tracker to finish processing blocks..."
 
 while [ $# -gt 0 ]; do
   case "$1" in
-    --postgress-access=*)
+    --postgres-access=*)
         arg="${1#*=}"
         POSTGRES_ACCESS="$arg"
         ;;

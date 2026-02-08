@@ -3,7 +3,7 @@
 set -e
 set -o pipefail
 
-# Script reponsible for execution of all actions required to finish configuration of the database holding a HAF database to work correctly with hivemind.
+# Script responsible for execution of all actions required to finish configuration of the database holding a HAF database to work correctly with reputation_tracker.
 
 print_help () {
     echo "Usage: $0 [OPTION[=VALUE]]..."
