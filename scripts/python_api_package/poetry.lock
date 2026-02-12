@@ -186,19 +186,19 @@ reference = "gitlab-hive"
 
 [[package]]
 name = "api-client-generator"
-version = "1.7.1.dev4+6fe5c3e.dirty"
+version = "1.7.1.post20260212121718"
 description = ""
 optional = false
 python-versions = ">=3.14,<4"
 groups = ["main"]
 files = [
-    {file = "api_client_generator-1.7.1.dev4+6fe5c3e.dirty-py3-none-any.whl", hash = "sha256:4a108d5a97a964c0a6bcf15caee1aa23eed2bd6efc3ba4d9080622dc6e234080"},
+    {file = "api_client_generator-1.7.1.post20260212121718-py3-none-any.whl", hash = "sha256:6aab7e6585e09b461304f55df1054c6b2aa861fe195000355c5f75dcec2da0d7"},
 ]
 
 [package.dependencies]
-datamodel-code-generator = "0.49.0"
-msgspec = "0.20.0"
-ruff = "0.11.5"
+datamodel-code-generator = ">=0.52.2"
+msgspec = ">=0.20.0"
+ruff = ">=0.11.5"
 
 [package.source]
 type = "legacy"
@@ -483,14 +483,14 @@ reference = "gitlab-hive"
 
 [[package]]
 name = "datamodel-code-generator"
-version = "0.49.0"
+version = "0.53.0"
 description = "Datamodel Code Generator"
 optional = false
 python-versions = ">=3.10"
 groups = ["main"]
 files = [
-    {file = "datamodel_code_generator-0.49.0-py3-none-any.whl", hash = "sha256:0c24d21b7a3103a89a324be48bbcac3fed1fd2f22804de8589e589f2c93d9dc0"},
-    {file = "datamodel_code_generator-0.49.0.tar.gz", hash = "sha256:eb4a95ee21c10f7675982f8b7d92344971b9a5e4c34c89b54652f8576b3a604b"},
+    {file = "datamodel_code_generator-0.53.0-py3-none-any.whl", hash = "sha256:d1cc2abe79f99b8208c363f5f4b603c29290327ff4e3219a08c0fff45f42aff4"},
+    {file = "datamodel_code_generator-0.53.0.tar.gz", hash = "sha256:af46b57ad78e6435873132c52843ef0ec7b768a591d3b9917d3409dfc1ab1c90"},
 ]
 
 [package.dependencies]
@@ -2080,4 +2080,4 @@ reference = "gitlab-hive"
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.14,<4"
-content-hash = "3c8430a86d089a1ce718a0612642ee9c29cf9278332991aedeae794e34587996"
+content-hash = "5d0bb64640ba1b487ec94d612401e8f2cc09cf6e614926594bd42bb47d5590ec"
