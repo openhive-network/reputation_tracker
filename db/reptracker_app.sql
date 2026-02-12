@@ -193,7 +193,7 @@ LANGUAGE 'plpgsql' STABLE
 AS
 $$
 BEGIN
-  RETURN runtime_hash FROM version LIMIT 1;
+  RETURN git_hash FROM version LIMIT 1;
 END;
 $$;
 
@@ -210,16 +210,9 @@ RETURNS VOID
 LANGUAGE 'plpgsql' VOLATILE
 AS
 $$
-DECLARE
-  _schema_hash TEXT := (SELECT schema_hash FROM version LIMIT 1);
 BEGIN
   TRUNCATE TABLE version;
-
-  IF _schema_hash IS NULL THEN
-    INSERT INTO version(schema_hash, runtime_hash) VALUES (_git_hash, _git_hash);
-  ELSE
-    INSERT INTO version(schema_hash, runtime_hash) VALUES (_schema_hash, _git_hash);
-  END IF;
+  INSERT INTO version(git_hash) VALUES (_git_hash);
 END
 $$;
 
@@ -427,7 +420,7 @@ $$
 DECLARE
   _blocks_range hive.blocks_range := (0,0);
 BEGIN
-  IF _maxBlockLimit != NULL THEN
+  IF _maxBlockLimit IS NOT NULL THEN
     RAISE NOTICE 'Max block limit is specified as: %', _maxBlockLimit;
   END IF;
 
