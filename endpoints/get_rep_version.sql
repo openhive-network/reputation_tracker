@@ -13,7 +13,7 @@ SET ROLE reptracker_owner;
       * `SELECT * FROM reptracker_endpoints.get_reptracker_version();`
       
       REST call example
-      * `GET ''https://%1$s/balance-api/version''`
+      * `GET ''https://%1$s/reputation-api/version''`
     operationId: reptracker_endpoints.get_reptracker_version
     responses:
       '200':
