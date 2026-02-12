@@ -79,6 +79,8 @@ variables:
   # Cache manager configuration (from common-ci-configuration)
   CACHE_MANAGER: "/tmp/cache-manager.sh"
   CACHE_MANAGER_REF: "develop"
+  # Set to "true" to run poetry update before install (uses latest dependency versions)
+  TEST_WITH_LATEST_DEPENDENCIES: "false"
 
 include:
 - template: Workflows/Branch-Pipelines.gitlab-ci.yml
@@ -200,17 +202,13 @@ extract-swagger-json:
   - public-runner-docker
 
 generate_python_api_client:
-  extends: .configuration_template
+  extends: .project_develop_configuration_template
   stage: build
   variables:
     PYPROJECT_DIR: "${CI_PROJECT_DIR}/scripts/python_api_package"
   needs:
   - job: extract-swagger-json
     artifacts: true
-  before_script:
-  - !reference [.configuration_template, before_script]
-  - poetry -C "${PYPROJECT_DIR}" lock
-  - poetry -C "${PYPROJECT_DIR}" install
   script:
   - ${PYPROJECT_DIR}/generate_reputation_api_client.sh
   artifacts:
@@ -505,7 +503,7 @@ sync:
     - fast
 
 python_api_client_test:
-  extends: .configuration_template
+  extends: .project_develop_configuration_template
   stage: test
   needs:
   - job: generate_python_api_client
@@ -513,9 +511,8 @@ python_api_client_test:
   variables:
     PYPROJECT_DIR: "${CI_PROJECT_DIR}/scripts/python_api_package"
   before_script:
-  - !reference [.configuration_template, before_script]
-  - poetry -C "${PYPROJECT_DIR}" lock
-  - poetry -C "${PYPROJECT_DIR}" install
+  - !reference [.project_develop_configuration_template, before_script]
+  - !reference [.update_deps_for_tests, script]
   script:
   - pytest "${PYPROJECT_DIR}/tests"
   tags:
