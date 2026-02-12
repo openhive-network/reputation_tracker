@@ -24,15 +24,14 @@ source = [
 
 [tool.poetry.dependencies]
 python = ">=3.14,<4"
-# Use Python 3.14 branch version that uses msgspec instead of pydantic
-api_client_generator = "1.7.1.dev4+6fe5c3e.dirty"
+api_client_generator = ">=1.7.1"
 # Pin pydantic to v1 (pure Python) to avoid pydantic-core build failures on Python 3.14
-pydantic = "1.10.25"
+pydantic = ">=1.10.25,<2"
 
 [tool.poetry.group.dev.dependencies]
-pytest = "8.3.5"
-pytest-asyncio = "0.25.3"
-hiveio-beekeepy = "1.28.5"
+pytest = ">=8.3.5"
+pytest-asyncio = ">=0.25.3"
+hiveio-beekeepy = ">=1.28.5"
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
