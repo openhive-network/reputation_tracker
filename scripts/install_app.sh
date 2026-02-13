@@ -18,8 +18,6 @@ print_help () {
     echo "  --postgres-url=URL        Allows to specify a PostgreSQL URL (in opposite to separate --host and --port options)"
     echo "  --swagger-url=URL         Allows to specify a server URL"
     echo "  --is_forking=TRUE/FALSE   Allows to specify if app should be forking or not (defaults to true)"
-    echo "  --indexes-only            Only creates indexes"
-    echo "  --schema-only             Only creates schema, but not indexes"
     echo "  --help               Display this help screen and exit"
     echo
 }
@@ -33,10 +31,6 @@ REPTRACKER_SCHEMA=${REPTRACKER_SCHEMA:-"reptracker_app"}
 IS_FORKING=${IS_FORKING:-"true"}
 SWAGGER_URL=${SWAGGER_URL:-"{reptracker-host}"}
 POSTGRES_APP_NAME=reptracker_install
-INDEXES_ONLY=false
-SCHEMA_ONLY=false
-
-
 while [ $# -gt 0 ]; do
   case "$1" in
     --host=*)
@@ -56,12 +50,6 @@ while [ $# -gt 0 ]; do
         ;;
     --is_forking=*)
         IS_FORKING="${1#*=}"
-        ;;
-    --indexes-only)
-        INDEXES_ONLY=true
-        ;;
-    --schema-only)
-        SCHEMA_ONLY=true
         ;;
     --help)
         print_help
@@ -132,17 +120,5 @@ install_schema() {
   psql "$POSTGRES_ACCESS" -v ON_ERROR_STOP=on  -c "SET ROLE reptracker_owner;GRANT ALL ON SCHEMA ${REPTRACKER_SCHEMA} TO hived_group;"
 }
 
-install_indexes() {
-  echo "Creating indexes..."
-  psql "$POSTGRES_ACCESS" -v ON_ERROR_STOP=on -f "$SRCPATH/db/create_indexes.sql"
-}
-
-if [ "$INDEXES_ONLY" = "true" ]; then
-  install_indexes
-elif [ "$SCHEMA_ONLY" = "true" ]; then
-  install_schema
-else
-  install_schema
-  install_indexes
-fi
+install_schema
 
