@@ -617,46 +617,36 @@ reference = "gitlab-hive"
 
 [[package]]
 name = "hiveio-beekeepy"
-version = "1.28.5"
+version = "1.28.6"
 description = "All in one package for beekeeper interaction via Python interface."
 optional = false
-python-versions = ">=3.12,<4"
+python-versions = "<4,>=3.12"
 groups = ["main"]
 files = [
-    {file = "hiveio_beekeepy-1.28.5-py3-none-any.whl", hash = "sha256:f13dc34c14f91110e65c0af5e7a20336cc10f18a628c8253ab7225346b6717bb"},
+    {file = "hiveio_beekeepy-1.28.6-py3-none-any.whl", hash = "sha256:b4725690361effb7bea8d13752aef9341914992048da651d7ec11acecfeb8305"},
 ]
 
 [package.dependencies]
 aiohttp = ">=3.11.15"
-hiveio-schemas = ">=1.28.0"
+hiveio-schemas = ">=1.28.2"
 loguru = ">=0.7.2"
 psutil = ">=7.0.0"
 python-dateutil = ">=2.8.2"
 requests = ">=2.32.3"
 
-[package.source]
-type = "legacy"
-url = "https://gitlab.syncad.com/api/v4/groups/136/-/packages/pypi/simple"
-reference = "gitlab-hive"
-
 [[package]]
 name = "hiveio-schemas"
-version = "1.28.1.post20260203120623"
+version = "1.28.2"
 description = "Tools for checking if message fits expected format"
 optional = false
-python-versions = ">=3.12,<4"
+python-versions = "<4,>=3.12"
 groups = ["main"]
 files = [
-    {file = "hiveio_schemas-1.28.1.post20260203120623-py3-none-any.whl", hash = "sha256:3e0cedb683096cb789c88c46666cf5fca36063986d8e24f2d742c6aabfd1dcb8"},
+    {file = "hiveio_schemas-1.28.2-py3-none-any.whl", hash = "sha256:5bb9ea330c5af8da41248b66f01aaba7a8785a76225630ab5fba5876397edd56"},
 ]
 
 [package.dependencies]
 msgspec = ">=0.20.0"
-
-[package.source]
-type = "legacy"
-url = "https://gitlab.syncad.com/api/v4/groups/136/-/packages/pypi/simple"
-reference = "gitlab-hive"
 
 [[package]]
 name = "idna"
@@ -1792,4 +1782,4 @@ propcache = ">=0.2.1"
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.14,<4"
-content-hash = "1d64280e1a6e3769292bb8ad969251673c3c76c46c4b614c23ac685d546b4ea9"
+content-hash = "cd68643b93d1ae04fd0ca79e2f83defb52c32528743ac27f264aa08c4d34e758"
