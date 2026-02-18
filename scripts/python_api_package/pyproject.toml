@@ -5,18 +5,14 @@ requires = [
 ]
 build-backend = "poetry_dynamic_versioning.backend"
 
-
 [tool.poetry]
-name = "reputation_api"
+name = "hiveio-reputation-api"
 version = "0.0.0"
-description = ""
-authors = []
-
 packages = [
-    { include = "reputation_api" },
+    { include = "hiveio_reputation_api" },
 ]
 include = [
-    { path =  "reputation_api/*", format = ["wheel", "sdist"] },
+    { path =  "hiveio_reputation_api/*", format = ["wheel", "sdist"] },
 ]
 source = [
     { name = "PyPI", priority = "primary" },
@@ -24,15 +20,12 @@ source = [
 ]
 
 [tool.poetry.dependencies]
-python = ">=3.14,<4"
-hiveio-api-client-generator = ">=1.7.1"
-# Pin pydantic to v1 (pure Python) to avoid pydantic-core build failures on Python 3.14
-pydantic = ">=1.10.25,<2"
+python = ">=3.12,<4"
+hiveio-beekeepy = ">=1.28.5"
 
 [tool.poetry.group.dev.dependencies]
 pytest = ">=8.3.5"
 pytest-asyncio = ">=0.25.3"
-hiveio-beekeepy = ">=1.28.5"
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
@@ -92,5 +85,5 @@ format-jinja = """
 
 [tool.poetry-dynamic-versioning.substitution]
 files = [
-    "reputation_api/__init__.py",
+    "hiveio_reputation_api/__init__.py",
 ]
