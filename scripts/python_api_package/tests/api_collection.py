@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from beekeepy._apis.abc.sendable import AsyncSendable
+from beekeepy.handle.remote import AsyncSendable
 
-from reputation_api.reputation_api_client import ReputationApi
+from hiveio_reputation_api.reputation_api_client import ReputationApi
 
 
 class ReputationApiCollection:

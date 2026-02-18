@@ -4,7 +4,7 @@ from typing import Final
 
 import aiohttp
 
-from beekeepy._communication.url import HttpUrl
+from beekeepy.interfaces import HttpUrl
 
 from tests.api_caller import ReputationApiCaller
 
