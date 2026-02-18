@@ -1,10 +1,8 @@
 from __future__ import annotations
 
-from beekeepy._communication.url import HttpUrl
-from beekeepy._remote_handle.abc.handle import AbstractAsyncHandle
-from beekeepy._remote_handle.abc.batch_handle import AsyncBatchHandle
-from beekeepy._remote_handle.settings import RemoteHandleSettings
-from beekeepy._runnable_handle.settings import RunnableHandleSettings
+from beekeepy.interfaces import HttpUrl
+from beekeepy.handle.remote import AbstractAsyncHandle, AsyncBatchHandle, RemoteHandleSettings
+from beekeepy.handle.runnable import RunnableHandleSettings
 
 from tests.api_collection import ReputationApiCollection
 
