@@ -6,7 +6,3 @@ accounts_dump.json
 endpoints_openapi
 build
 process_openapi.py
-
-# Python API client generation
-scripts/python_api_package/reputation_api/*
-scripts/python_api_package/dist/
