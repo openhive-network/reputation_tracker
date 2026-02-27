@@ -10,7 +10,7 @@ info:
   license:
     name: MIT License
     url: https://opensource.org/license/mit
-  version: 1.27.11
+  version: 0.0.0-dev
 externalDocs:
   description: Reputation tracker gitlab repository
   url: https://gitlab.syncad.com/hive/reputation_tracker
@@ -49,7 +49,7 @@ declare
       "name": "MIT License",
       "url": "https://opensource.org/license/mit"
     },
-    "version": "1.27.11"
+    "version": "0.0.0-dev"
   },
   "externalDocs": {
     "description": "Reputation tracker gitlab repository",
