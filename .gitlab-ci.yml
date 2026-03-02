@@ -32,13 +32,6 @@ variables:
   HAF_APP_ROLE_PREFIX: "reptracker"
   BLOCK_LOG_SOURCE_DIR_5M: /blockchain/block_log_5m
   FF_NETWORK_PER_BUILD: 1
-  # uses registry.gitlab.syncad.com/hive/haf/ci-base-image:ubuntu24.04-1
-  BUILDER_IMAGE_TAG: "$TEST_HAF_IMAGE_TAG"
-  BUILDER_IMAGE_PATH: "registry.gitlab.syncad.com/hive/haf/ci-base-image${BUILDER_IMAGE_TAG}"
-  # Python 3.14 image for API client generation and tests
-  # uses registry.gitlab.syncad.com/hive/hive/ci-base-image:ubuntu24.04-py3.14-1
-  PYTHON_IMAGE_TAG: "@sha256:64bc6a41d7811e6caace5fed8c82ca1ee6c26bfdcae8b29546d830a63bfe1f17"
-  PYTHON_IMAGE: "registry.gitlab.syncad.com/hive/hive/ci-base-image${PYTHON_IMAGE_TAG}"
   # Shared HAF app test runner with Python 3.14, Docker CLI, JMeter (from common-ci-configuration)
   HAF_APP_TEST_RUNNER_IMAGE: "registry.gitlab.syncad.com/hive/common-ci-configuration/haf-app-test-runner:2.2"
   # Python 3.14 compatibility - allow PyO3-based packages to build
@@ -526,7 +519,6 @@ python_api_client_test:
     artifacts: true
   variables:
     PYPROJECT_DIR: "${CI_PROJECT_DIR}/scripts/python_api_package"
-    PYTHON_IMAGE: "registry.gitlab.syncad.com/hive/common-ci-configuration/ci-base-image:ubuntu24.04-py${PYTHON_VERSION}-2"
   parallel:
     matrix:
     - PYTHON_VERSION: ["3.12", "3.14"]
@@ -547,7 +539,6 @@ test_python_api_wheel:
   variables:
     PYPROJECT_DIR: "${CI_PROJECT_DIR}/scripts/python_api_package"
     DIST_DIR: "${CI_PROJECT_DIR}/scripts/python_api_package/dist"
-    PYTHON_IMAGE: "registry.gitlab.syncad.com/hive/common-ci-configuration/ci-base-image:ubuntu24.04-py${PYTHON_VERSION}-2"
   parallel:
     matrix:
     - PYTHON_VERSION: ["3.12", "3.14"]
