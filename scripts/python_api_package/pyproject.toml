@@ -85,8 +85,7 @@ format-jinja = """
     {%- set dev = timestamp|int if is_feature_branch else none -%}
     {%- set local_parts = ['unstable'] if is_feature_branch else [] -%}
     {%- set local_parts = local_parts + ['dirty'] if dirty else local_parts -%}
-
-    {{ serialize_pep440(base, stage, revision, post=post, dev=dev, metadata=local_parts) }}
+    {{- serialize_pep440(base, stage, revision, post=post, dev=dev, metadata=local_parts) -}}
 """
 
 [tool.poetry-dynamic-versioning.substitution]
