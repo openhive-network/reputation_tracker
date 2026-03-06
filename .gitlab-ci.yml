@@ -262,9 +262,7 @@ prepare_haf_data:
     BLOCK_LOG_SOURCE_DIR: $BLOCK_LOG_SOURCE_DIR_5M
     # HAF_IMAGE_NAME and HAF_COMMIT are now provided directly by find_haf_image
   tags:
-  - public-runner-docker
-  - data-cache-storage
-  - fast
+  - hive-builder-12
 
 .docker-build-template:
   extends: .docker_image_builder_job_template
@@ -404,9 +402,7 @@ sync:
   after_script: !reference [.haf_app_sync_cleanup, after_script]
   artifacts: !reference [.haf_app_sync_artifacts, artifacts]
   tags:
-  - public-runner-docker
-  - data-cache-storage
-  - fast
+  - hive-builder-12
 
 # =============================================================================
 # DinD Test Template
