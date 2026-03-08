@@ -49,7 +49,7 @@ variables:
   # Enable CI-specific PostgreSQL config with reduced memory for HAF service containers
   HAF_CI_MODE: "1"
   # Common CI configuration reference
-  COMMON_CI_REF: "feature/pg18-port"
+  COMMON_CI_REF: "develop"
   # =============================================================================
   # QUICK TEST MODE
   # =============================================================================
@@ -79,7 +79,7 @@ include:
 - template: Workflows/Branch-Pipelines.gitlab-ci.yml
 # All CI templates from common-ci-configuration
 - project: 'hive/common-ci-configuration'
-  ref: feature/pg18-port
+  ref: develop
   file:
     - '/templates/base.gitlab-ci.yml'
     - '/templates/docker_image_jobs.gitlab-ci.yml'
@@ -168,8 +168,8 @@ find_haf_image:
   extends: .find_haf_image
   stage: detect
   variables:
-    UPSTREAM_BRANCH: "feature/pg18-port"
-    HAF_PATTERNS_REF: "feature/pg18-port"
+    UPSTREAM_BRANCH: "develop"
+    HAF_PATTERNS_REF: "develop"
 
 # =============================================================================
 # LINT JOBS - Using common-ci-configuration templates
