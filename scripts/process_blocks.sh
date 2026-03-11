@@ -1,7 +1,6 @@
 #! /bin/bash
 set -e
 set -o pipefail
-trap 'trap - TERM INT; kill 0' TERM INT
 # Script responsible for execution of all actions required to finish configuration of the database holding a HAF database to work correctly with reputation_tracker.
 
 print_help () {
@@ -72,7 +71,7 @@ process_blocks() {
     # record the startup time for use in health checks
     date -uIseconds > /tmp/block_processing_startup_time.txt
 
-    run_with_reconnect.sh -- psql "$POSTGRES_ACCESS" -v "ON_ERROR_STOP=on" -v REPTRACKER_SCHEMA="${REPTRACKER_SCHEMA}" -c "\timing" -c "SET SEARCH_PATH TO ${REPTRACKER_SCHEMA};" -c "CALL ${REPTRACKER_SCHEMA}.main('${REPTRACKER_SCHEMA}', $n_blocks);" 2>&1 | tee -i $log_file
+    exec run_with_reconnect.sh -- psql "$POSTGRES_ACCESS" -v "ON_ERROR_STOP=on" -v REPTRACKER_SCHEMA="${REPTRACKER_SCHEMA}" -c "\timing" -c "SET SEARCH_PATH TO ${REPTRACKER_SCHEMA};" -c "CALL ${REPTRACKER_SCHEMA}.main('${REPTRACKER_SCHEMA}', $n_blocks);"
 }
 
 process_blocks "$PROCESS_BLOCK_LIMIT"
