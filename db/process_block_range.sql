@@ -56,7 +56,7 @@ WITH
 --   - comment_payout_update (61): Post paid out, votes are finalized
 operations_in_range AS MATERIALIZED (
   SELECT
-    ov.body,
+    ov.body_value,
     ov.op_type_id,
     ov.id AS source_op
   FROM operations_view ov
@@ -67,7 +67,7 @@ operations_in_range AS MATERIALIZED (
 -----------------------------------------------------------------------------------
 -- PHASE 1b: Parse JSON operation bodies into structured data
 -----------------------------------------------------------------------------------
--- CROSS JOIN LATERAL parses each operation's JSON body.
+-- CROSS JOIN LATERAL parses each operation's JSONB body_value.
 -- Inline CASE avoids wrapper function overhead (process_vote_impacting_operations).
 -- MATERIALIZED prevents multiple scans that would re-execute JSON parsing.
 vote_operations_raw AS MATERIALIZED (
@@ -83,10 +83,10 @@ vote_operations_raw AS MATERIALIZED (
     SELECT (
       CASE
         WHEN ov.op_type_id = __op_vote THEN
-          reptracker_backend.process_effective_vote_operation(ov.body)
+          reptracker_backend.process_effective_vote_operation(ov.body_value)
         ELSE
           -- Delete and payout operations share same parser (only need author/permlink)
-          reptracker_backend.process_deleted_comment_operation(ov.body)
+          reptracker_backend.process_deleted_comment_operation(ov.body_value)
       END
     ).*
   ) AS ev

@@ -55,19 +55,16 @@ CREATE TYPE reptracker_backend.effective_vote_return AS
  * This operation is emitted when a vote is cast or changed on a post/comment.
  * It contains the current vote weight (rshares) after the vote was applied.
  *
- * JSON Structure:
+ * JSON Structure (body_value contains the inner value directly):
  *   {
- *     "type": "effective_comment_vote_operation",
- *     "value": {
- *       "author": "bob",
- *       "voter": "alice",
- *       "permlink": "my-first-post",
- *       "rshares": 1234567890,
- *       ...
- *     }
+ *     "author": "bob",
+ *     "voter": "alice",
+ *     "permlink": "my-first-post",
+ *     "rshares": 1234567890,
+ *     ...
  *   }
  *
- * @param _operation_body  The JSONB operation body from operations_view
+ * @param _operation_body  The JSONB body_value from operations_view
  *
  * @returns effective_vote_return with (author, voter, permlink, rshares)
  *
@@ -83,12 +80,12 @@ AS
 $$
 BEGIN
   RETURN (
-    ((_operation_body)->'value'->>'author')::TEXT,
-    ((_operation_body)->'value'->>'voter')::TEXT,
-    ((_operation_body)->'value'->>'permlink')::TEXT,
+    ((_operation_body)->>'author')::TEXT,
+    ((_operation_body)->>'voter')::TEXT,
+    ((_operation_body)->>'permlink')::TEXT,
     -- The ->> operator extracts as TEXT regardless of JSON type, then we cast to BIGINT.
     -- This handles both numeric and string representations of rshares uniformly.
-    (_operation_body -> 'value' ->> 'rshares')::BIGINT
+    (_operation_body ->> 'rshares')::BIGINT
   )::reptracker_backend.effective_vote_return;
 END
 $$;
@@ -104,16 +101,13 @@ $$;
  * the active_votes table and their reputation contributions are preserved
  * (not reversed). This prevents re-processing the same votes.
  *
- * JSON Structure:
+ * JSON Structure (body_value contains the inner value directly):
  *   {
- *     "type": "delete_comment_operation",
- *     "value": {
- *       "author": "bob",
- *       "permlink": "my-first-post"
- *     }
+ *     "author": "bob",
+ *     "permlink": "my-first-post"
  *   }
  *
- * @param _operation_body  The JSONB operation body from operations_view
+ * @param _operation_body  The JSONB body_value from operations_view
  *
  * @returns effective_vote_return with (author, NULL, permlink, NULL)
  *          voter and rshares are NULL since delete/payout affects all votes
@@ -130,9 +124,9 @@ AS
 $$
 BEGIN
   RETURN (
-    ((_operation_body)->'value'->>'author')::TEXT,
+    ((_operation_body)->>'author')::TEXT,
     NULL,  -- voter: NULL because delete/payout affects ALL voters on this post
-    ((_operation_body)->'value'->>'permlink')::TEXT,
+    ((_operation_body)->>'permlink')::TEXT,
     NULL   -- rshares: NULL because this is a delete signal, not a vote
   )::reptracker_backend.effective_vote_return;
 END
