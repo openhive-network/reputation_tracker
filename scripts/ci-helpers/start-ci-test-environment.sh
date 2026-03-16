@@ -74,6 +74,10 @@ IFS=" " read -ra COMPOSE_OPTIONS <<< "$COMPOSE_OPTIONS_STRING"
 
 echo "Docker Compose options: ${COMPOSE_OPTIONS[*]}"
 docker compose "${COMPOSE_OPTIONS[@]}" config | tee docker-compose-config.yml.log
-timeout -s INT -k 1m 15m docker compose "${COMPOSE_OPTIONS[@]}" up --detach --quiet-pull
+if ! timeout -s INT -k 1m 15m docker compose "${COMPOSE_OPTIONS[@]}" up --detach --quiet-pull; then
+  echo "Docker compose up failed. Collecting container logs..."
+  docker compose "${COMPOSE_OPTIONS[@]}" logs --no-color 2>&1 | tail -200
+  exit 1
+fi
 
 popd
