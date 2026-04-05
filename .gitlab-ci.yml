@@ -81,68 +81,68 @@ include:
 - project: 'hive/common-ci-configuration'
   ref: develop
   file:
-    - '/templates/base.gitlab-ci.yml'
-    - '/templates/docker_image_jobs.gitlab-ci.yml'
-    - '/templates/haf_data_preparation.gitlab-ci.yml'
-    - '/templates/cache_cleanup.gitlab-ci.yml'
-    - '/templates/python_projects.gitlab-ci.yml'
-    - '/templates/npm_projects.gitlab-ci.yml'
-    - '/templates/test_jobs.gitlab-ci.yml'
-    - '/templates/haf_app_testing.gitlab-ci.yml'
-    - '/templates/source_change_detection.gitlab-ci.yml'
+  - '/templates/base.gitlab-ci.yml'
+  - '/templates/docker_image_jobs.gitlab-ci.yml'
+  - '/templates/haf_data_preparation.gitlab-ci.yml'
+  - '/templates/cache_cleanup.gitlab-ci.yml'
+  - '/templates/python_projects.gitlab-ci.yml'
+  - '/templates/npm_projects.gitlab-ci.yml'
+  - '/templates/test_jobs.gitlab-ci.yml'
+  - '/templates/haf_app_testing.gitlab-ci.yml'
+  - '/templates/source_change_detection.gitlab-ci.yml'
 
 default:
   hooks:
     pre_get_sources_script:
       # Disable recursive submodule fetching - HAF has nested submodules with relative URLs
       # that cause "transport 'file' not allowed" errors during fetch operations
-      - git config --global fetch.recurseSubmodules false
+    - git config --global fetch.recurseSubmodules false
       # Clean corrupt git state left by cancelled pipelines (see GitLab #296638, #4600)
       # Wrapped in subshell to avoid changing working directory for subsequent git operations
-      - |
-        (
-        cd "${CI_PROJECT_DIR:-/builds}" 2>/dev/null || exit 0
-        echo "pre_get_sources: checking $(pwd) for corrupt git state"
-        if [ -d ".git" ]; then
-          # Remove stale lock files that block git operations
-          find .git -name "*.lock" -delete 2>/dev/null || true
+    - |
+      (
+      cd "${CI_PROJECT_DIR:-/builds}" 2>/dev/null || exit 0
+      echo "pre_get_sources: checking $(pwd) for corrupt git state"
+      if [ -d ".git" ]; then
+        # Remove stale lock files that block git operations
+        find .git -name "*.lock" -delete 2>/dev/null || true
 
-          # Check if main repo is corrupt - if so, remove .git to force fresh clone
-          if ! git rev-parse HEAD >/dev/null 2>&1; then
-            echo "pre_get_sources: main repository corrupt, forcing fresh clone"
-            rm -rf .git
-          else
-            # Main repo OK - check and clean corrupt submodules
-            # Check both the working dir and .git/modules/ since either can be corrupt
-            if [ -f ".gitmodules" ]; then
-              git config --file .gitmodules --get-regexp path 2>/dev/null | awk '{print $2}' | while read submod; do
-                needs_clean=false
-                [ -z "$submod" ] && continue
-                # Check if submodule working directory exists but is corrupt
-                if [ -d "$submod" ] && [ -f "$submod/.git" ]; then
-                  if ! git -C "$submod" rev-parse HEAD >/dev/null 2>&1; then
-                    needs_clean=true
-                  fi
-                fi
-                # Check if .git/modules exists but is corrupt (even if working dir is gone)
-                if [ -d ".git/modules/$submod" ]; then
-                  if ! git --git-dir=".git/modules/$submod" rev-parse HEAD >/dev/null 2>&1; then
-                    echo "pre_get_sources: $submod corrupt (rev-parse failed)"
-                    needs_clean=true
-                  fi
-                fi
-                if [ "$needs_clean" = true ]; then
-                  echo "pre_get_sources: cleaning corrupt submodule: $submod"
-                  rm -rf "$submod" ".git/modules/$submod"
-                fi
-              done
-            fi
-            echo "pre_get_sources: existing repo OK"
-          fi
+        # Check if main repo is corrupt - if so, remove .git to force fresh clone
+        if ! git rev-parse HEAD >/dev/null 2>&1; then
+          echo "pre_get_sources: main repository corrupt, forcing fresh clone"
+          rm -rf .git
         else
-          echo "pre_get_sources: no .git directory (fresh workspace)"
+          # Main repo OK - check and clean corrupt submodules
+          # Check both the working dir and .git/modules/ since either can be corrupt
+          if [ -f ".gitmodules" ]; then
+            git config --file .gitmodules --get-regexp path 2>/dev/null | awk '{print $2}' | while read submod; do
+              needs_clean=false
+              [ -z "$submod" ] && continue
+              # Check if submodule working directory exists but is corrupt
+              if [ -d "$submod" ] && [ -f "$submod/.git" ]; then
+                if ! git -C "$submod" rev-parse HEAD >/dev/null 2>&1; then
+                  needs_clean=true
+                fi
+              fi
+              # Check if .git/modules exists but is corrupt (even if working dir is gone)
+              if [ -d ".git/modules/$submod" ]; then
+                if ! git --git-dir=".git/modules/$submod" rev-parse HEAD >/dev/null 2>&1; then
+                  echo "pre_get_sources: $submod corrupt (rev-parse failed)"
+                  needs_clean=true
+                fi
+              fi
+              if [ "$needs_clean" = true ]; then
+                echo "pre_get_sources: cleaning corrupt submodule: $submod"
+                rm -rf "$submod" ".git/modules/$submod"
+              fi
+            done
+          fi
+          echo "pre_get_sources: existing repo OK"
         fi
-        )
+      else
+        echo "pre_get_sources: no .git directory (fresh workspace)"
+      fi
+      )
 
 # =============================================================================
 # DETECT CHANGES - Determines if heavy jobs can be skipped
@@ -175,6 +175,7 @@ find_haf_image:
 # LINT JOBS - Using common-ci-configuration templates
 # =============================================================================
 
+    UPSTREAM_OVERRIDE_TAG: test4
 lint_bash_scripts:
   extends: .haf_app_lint_bash
   stage: lint
@@ -192,7 +193,7 @@ verify_poetry_lock_stability_api_package:
   variables:
     PYPROJECT_DIR: "${CI_PROJECT_DIR}/scripts/python_api_package"
   tags:
-    - public-runner-docker
+  - public-runner-docker
 
 verify_poetry_lock_stability_api_generation:
   stage: lint
@@ -200,7 +201,7 @@ verify_poetry_lock_stability_api_generation:
   variables:
     PYPROJECT_DIR: "${CI_PROJECT_DIR}/scripts/api_generation"
   tags:
-    - public-runner-docker
+  - public-runner-docker
 
 # Note: HAF image is now dynamically detected by find_haf_image job.
 # Jobs use HAF_UPSTREAM_* variables directly (mapped to HAF_* where needed).
@@ -419,8 +420,8 @@ sync:
 # HAF commit and app commit to ensure schema compatibility.
 .test-with-docker-compose:
   extends:
-    - .docker_image_builder_job_template
-    - .haf_app_dind_test_variables
+  - .docker_image_builder_job_template
+  - .haf_app_dind_test_variables
   stage: test
   image: ${HAF_APP_TEST_RUNNER_IMAGE}
   variables:
@@ -431,58 +432,58 @@ sync:
     COMPOSE_OPTIONS_STRING: "--file docker-compose-test.yml --ansi never"
   timeout: 30 minutes
   before_script:
-    - !reference [.docker_image_builder_job_template, before_script]
-    - |
-      echo -e "\e[0Ksection_start:$(date +%s):login[collapsed=true]\r\e[0KLogging to Docker registry..."
-      docker login -u "$CI_REGISTRY_USER" -p "$CI_REGISTRY_PASSWORD" $CI_REGISTRY
-      echo -e "\e[0Ksection_end:$(date +%s):login\r\e[0K"
-    # Cache extraction using shared script from common-ci-configuration
-    - !reference [.fetch_extract_test_cache, before_script]
-    - |
-      echo -e "\e[0Ksection_start:$(date +%s):extract[collapsed=true]\r\e[0KExtracting cache for DinD test..."
-      JOB_DIR="${CI_PROJECT_DIR}/${CI_JOB_ID}"
-      mkdir -p "${JOB_DIR}"
+  - !reference [.docker_image_builder_job_template, before_script]
+  - |
+    echo -e "\e[0Ksection_start:$(date +%s):login[collapsed=true]\r\e[0KLogging to Docker registry..."
+    docker login -u "$CI_REGISTRY_USER" -p "$CI_REGISTRY_PASSWORD" $CI_REGISTRY
+    echo -e "\e[0Ksection_end:$(date +%s):login\r\e[0K"
+   # Cache extraction using shared script from common-ci-configuration
+  - !reference [.fetch_extract_test_cache, before_script]
+  - |
+    echo -e "\e[0Ksection_start:$(date +%s):extract[collapsed=true]\r\e[0KExtracting cache for DinD test..."
+    JOB_DIR="${CI_PROJECT_DIR}/${CI_JOB_ID}"
+    mkdir -p "${JOB_DIR}"
 
-      # Use shared extract-test-cache.sh script (exact key match only)
-      $EXTRACT_TEST_CACHE "${APP_SYNC_CACHE_TYPE}" "${APP_CACHE_KEY}" "${JOB_DIR}"
+    # Use shared extract-test-cache.sh script (exact key match only)
+    $EXTRACT_TEST_CACHE "${APP_SYNC_CACHE_TYPE}" "${APP_CACHE_KEY}" "${JOB_DIR}"
 
-      # Relocate shm_dir from inside datadir to be a sibling (for old cache formats)
-      if [[ -d "${HAF_DATA_DIRECTORY}/shm_dir" ]] && [[ ! -d "${HAF_SHM_DIRECTORY}" ]]; then
-        echo "Relocating shm_dir to parallel location..."
-        mv "${HAF_DATA_DIRECTORY}/shm_dir" "${HAF_SHM_DIRECTORY}"
-      fi
+    # Relocate shm_dir from inside datadir to be a sibling (for old cache formats)
+    if [[ -d "${HAF_DATA_DIRECTORY}/shm_dir" ]] && [[ ! -d "${HAF_SHM_DIRECTORY}" ]]; then
+      echo "Relocating shm_dir to parallel location..."
+      mv "${HAF_DATA_DIRECTORY}/shm_dir" "${HAF_SHM_DIRECTORY}"
+    fi
 
-      # Handle blockchain - copy to docker directory
-      mkdir -p "${CI_PROJECT_DIR}/docker/blockchain"
-      if [[ -d "${HAF_DATA_DIRECTORY}/blockchain" ]] && [[ -n "$(ls -A "${HAF_DATA_DIRECTORY}/blockchain" 2>/dev/null)" ]]; then
-        echo "Copying blockchain from cache to docker directory..."
-        cp -aL "${HAF_DATA_DIRECTORY}/blockchain"/* "${CI_PROJECT_DIR}/docker/blockchain/"
-      elif [[ -d "${BLOCK_LOG_SOURCE_DIR_5M}" ]]; then
-        echo "Symlinking blockchain from source..."
-        ln -sfn "${BLOCK_LOG_SOURCE_DIR_5M}/block_log" "${CI_PROJECT_DIR}/docker/blockchain/block_log"
-        ln -sfn "${BLOCK_LOG_SOURCE_DIR_5M}/block_log.artifacts" "${CI_PROJECT_DIR}/docker/blockchain/block_log.artifacts"
-      fi
-      ls -la "${CI_PROJECT_DIR}/docker/blockchain/"
+    # Handle blockchain - copy to docker directory
+    mkdir -p "${CI_PROJECT_DIR}/docker/blockchain"
+    if [[ -d "${HAF_DATA_DIRECTORY}/blockchain" ]] && [[ -n "$(ls -A "${HAF_DATA_DIRECTORY}/blockchain" 2>/dev/null)" ]]; then
+      echo "Copying blockchain from cache to docker directory..."
+      cp -aL "${HAF_DATA_DIRECTORY}/blockchain"/* "${CI_PROJECT_DIR}/docker/blockchain/"
+    elif [[ -d "${BLOCK_LOG_SOURCE_DIR_5M}" ]]; then
+      echo "Symlinking blockchain from source..."
+      ln -sfn "${BLOCK_LOG_SOURCE_DIR_5M}/block_log" "${CI_PROJECT_DIR}/docker/blockchain/block_log"
+      ln -sfn "${BLOCK_LOG_SOURCE_DIR_5M}/block_log.artifacts" "${CI_PROJECT_DIR}/docker/blockchain/block_log.artifacts"
+    fi
+    ls -la "${CI_PROJECT_DIR}/docker/blockchain/"
 
-      echo -e "\e[0Ksection_end:$(date +%s):extract\r\e[0K"
-    - !reference [.haf_app_dind_compose_startup, script]
-    - !reference [.haf_app_dind_wait_for_services, script]
+    echo -e "\e[0Ksection_end:$(date +%s):extract\r\e[0K"
+  - !reference [.haf_app_dind_compose_startup, script]
+  - !reference [.haf_app_dind_wait_for_services, script]
   after_script: !reference [.haf_app_dind_compose_teardown, after_script]
   artifacts:
     when: always
     paths:
-      - docker/container-logs.tar.gz
+    - docker/container-logs.tar.gz
     expire_in: 1 week
   tags:
-    - public-runner-docker
-    - data-cache-storage
-    - fast
+  - public-runner-docker
+  - data-cache-storage
+  - fast
 
 # Template for Tavern-based tests (uses centralized common-ci template)
 .test-with-docker-compose-tavern:
   extends:
-    - .docker_image_builder_job_template
-    - .haf_app_dind_tavern_tests
+  - .docker_image_builder_job_template
+  - .haf_app_dind_tavern_tests
   image: ${HAF_APP_TEST_RUNNER_IMAGE}
   variables:
     # Docker connection for Ubuntu-based haf-app-test-runner (connects to DinD service)
@@ -493,26 +494,26 @@ sync:
     REPTRACKER_PORT: 3000
     PYTEST_WORKERS: "16"
   before_script:
-    - !reference [.docker_image_builder_job_template, before_script]
-    - |
-      echo -e "\e[0Ksection_start:$(date +%s):login[collapsed=true]\r\e[0KLogging to Docker registry..."
-      docker login -u "$CI_REGISTRY_USER" -p "$CI_REGISTRY_PASSWORD" $CI_REGISTRY
-      echo -e "\e[0Ksection_end:$(date +%s):login\r\e[0K"
-    - !reference [.haf_app_dind_tavern_tests, before_script]
-    - |
-      echo -e "\e[0Ksection_start:$(date +%s):tests_api[collapsed=true]\r\e[0KCloning tests_api repository..."
-      TESTS_API_DIR="${CI_PROJECT_DIR}/tests_api"
-      rm -rf "$TESTS_API_DIR"
-      git clone --depth 1 https://gitlab.syncad.com/hive/tests_api.git "$TESTS_API_DIR"
-      # Install tests_api for validate_response module (required by tavern tests)
-      # venv is in docker/ dir (created by compose_startup -> tavern_install_deps)
-      . "${CI_PROJECT_DIR}/docker/venv/bin/activate"
-      pip install -e "${CI_PROJECT_DIR}/tests_api"
-      echo -e "\e[0Ksection_end:$(date +%s):tests_api\r\e[0K"
+  - !reference [.docker_image_builder_job_template, before_script]
+  - |
+    echo -e "\e[0Ksection_start:$(date +%s):login[collapsed=true]\r\e[0KLogging to Docker registry..."
+    docker login -u "$CI_REGISTRY_USER" -p "$CI_REGISTRY_PASSWORD" $CI_REGISTRY
+    echo -e "\e[0Ksection_end:$(date +%s):login\r\e[0K"
+  - !reference [.haf_app_dind_tavern_tests, before_script]
+  - |
+    echo -e "\e[0Ksection_start:$(date +%s):tests_api[collapsed=true]\r\e[0KCloning tests_api repository..."
+    TESTS_API_DIR="${CI_PROJECT_DIR}/tests_api"
+    rm -rf "$TESTS_API_DIR"
+    git clone --depth 1 https://gitlab.syncad.com/hive/tests_api.git "$TESTS_API_DIR"
+    # Install tests_api for validate_response module (required by tavern tests)
+    # venv is in docker/ dir (created by compose_startup -> tavern_install_deps)
+    . "${CI_PROJECT_DIR}/docker/venv/bin/activate"
+    pip install -e "${CI_PROJECT_DIR}/tests_api"
+    echo -e "\e[0Ksection_end:$(date +%s):tests_api\r\e[0K"
   tags:
-    - public-runner-docker
-    - data-cache-storage
-    - fast
+  - public-runner-docker
+  - data-cache-storage
+  - fast
 
 python_api_client_test:
   extends: .project_develop_configuration_template
@@ -706,9 +707,10 @@ deploy-wax-spec-dev-package:
     NPM_PACKAGE_SCOPE: "@hiveio"
   before_script:
     # Find the tgz file dynamically since dotenv contains absolute paths from generator runner
-    - export PACKAGE_TGZ_PATH=$(ls ${CI_PROJECT_DIR}/build/*.tgz 2>/dev/null | head -1)
-    - echo "Using PACKAGE_TGZ_PATH=${PACKAGE_TGZ_PATH}"
-    - !reference [.npm_deploy_package_template, before_script]
+  - export PACKAGE_TGZ_PATH=$(ls ${CI_PROJECT_DIR}/build/*.tgz 2>/dev/null | head
+    -1)
+  - echo "Using PACKAGE_TGZ_PATH=${PACKAGE_TGZ_PATH}"
+  - !reference [.npm_deploy_package_template, before_script]
   needs:
   - job: generate-wax-spec
     artifacts: true
@@ -725,9 +727,10 @@ deploy-wax-spec-production-public-npm:
     SOURCE_DIR: "${CI_PROJECT_DIR}/build/generated"
   before_script:
     # Find the tgz file dynamically since dotenv contains absolute paths from generator runner
-    - export PACKAGE_TGZ_PATH=$(ls ${CI_PROJECT_DIR}/build/*.tgz 2>/dev/null | head -1)
-    - echo "Using PACKAGE_TGZ_PATH=${PACKAGE_TGZ_PATH}"
-    - !reference [.registry_npmjs_org_deploy_package_template, before_script]
+  - export PACKAGE_TGZ_PATH=$(ls ${CI_PROJECT_DIR}/build/*.tgz 2>/dev/null | head
+    -1)
+  - echo "Using PACKAGE_TGZ_PATH=${PACKAGE_TGZ_PATH}"
+  - !reference [.registry_npmjs_org_deploy_package_template, before_script]
   needs:
   - job: generate-wax-spec
     artifacts: true
