@@ -92,7 +92,7 @@ declare
         ],
         "responses": {
           "200": {
-            "description": "No such account in the database",
+            "description": "Account reputation\n\n* Returns `INT`\n",
             "content": {
               "application/json": {
                 "schema": {
@@ -101,6 +101,9 @@ declare
                 "example": 69
               }
             }
+          },
+          "404": {
+            "description": "No such account in the database"
           }
         }
       }

@@ -34,6 +34,7 @@ SET ROLE reptracker_owner;
             schema:
               type: integer
             example: 69
+      '404':
         description: No such account in the database
  */
 -- openapi-generated-code-begin
