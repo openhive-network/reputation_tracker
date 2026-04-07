@@ -92,7 +92,7 @@ declare
         ],
         "responses": {
           "200": {
-            "description": "No such account in the database",
+            "description": "Account reputation\n\n* Returns `INT`\n",
             "content": {
               "application/json": {
                 "schema": {
@@ -101,6 +101,9 @@ declare
                 "example": 69
               }
             }
+          },
+          "404": {
+            "description": "No such account in the database"
           }
         }
       }
@@ -111,7 +114,7 @@ declare
           "Other"
         ],
         "summary": "Get reputation tracker''s version",
-        "description": "Get reputation tracker''s last commit hash (versions set by by hash value).\n\nSQL example\n* `SELECT * FROM reptracker_endpoints.get_reptracker_version();`\n\nREST call example\n* `GET ''https://%1$s/balance-api/version''`\n",
+        "description": "Get reputation tracker''s last commit hash (versions set by by hash value).\n\nSQL example\n* `SELECT * FROM reptracker_endpoints.get_reptracker_version();`\n\nREST call example\n* `GET ''https://%1$s/reputation-api/version''`\n",
         "operationId": "reptracker_endpoints.get_reptracker_version",
         "responses": {
           "200": {
