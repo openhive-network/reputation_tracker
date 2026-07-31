@@ -1,0 +1,83 @@
+SET ROLE reptracker_owner;
+
+/** openapi:paths
+/sync-status:
+  get:
+    tags:
+      - Other
+    summary: Get reputation tracker''s sync status
+    description: |
+      Get the last block processed by reputation tracker as an object containing
+      both the block number and its timestamp (UTC). This is the uniform
+      HAF-app sync/health endpoint: the timestamp lets a consumer compute
+      staleness with a single call (`age = now() - last_block_time`) without
+      needing a separate head-block reference. Supersedes the deprecated
+      `/last-synced-block`.
+
+      SQL example
+      * `SELECT * FROM reptracker_endpoints.get_rep_sync_status();`
+
+      REST call example
+      * `GET ''https://%1$s/reputation-api/sync-status''`
+    operationId: reptracker_endpoints.get_rep_sync_status
+    responses:
+      '200':
+        description: |
+          Last block processed by reputation tracker and its timestamp.
+          `last_block_time` is null if no block has been processed yet.
+
+          * Returns `JSON`
+        content:
+          application/json:
+            schema:
+              type: object
+              x-sql-datatype: JSON
+              properties:
+                last_block_num:
+                  type: integer
+                  description: highest block number processed by the app
+                last_block_time:
+                  type: string
+                  format: date-time
+                  description: UTC timestamp of that block
+            example:
+              last_block_num: 5000000
+              last_block_time: '2016-09-15T19:47:21'
+ */
+-- openapi-generated-code-begin
+DROP FUNCTION IF EXISTS reptracker_endpoints.get_rep_sync_status;
+CREATE OR REPLACE FUNCTION reptracker_endpoints.get_rep_sync_status()
+RETURNS JSON 
+-- openapi-generated-code-end
+LANGUAGE 'plpgsql' STABLE
+AS
+$$
+/*
+================================================================================
+ENDPOINT: get_rep_sync_status
+================================================================================
+PURPOSE:
+  Returns the app's last processed block number together with that block's
+  timestamp, so monitors and health checks can judge freshness in one call.
+  This is the HAF-wide uniform sync-status shape (see also the deprecated
+  /last-synced-block, which returns only the bare block number).
+
+DATA SOURCE:
+  reptracker_backend.sync_status() — reads current_block_num from the HAF
+  context and joins hafd.blocks for the block's created_at.
+
+CACHING:
+  No cache (max-age=0): used for real-time sync-status / health monitoring.
+
+RETURN: JSON {"last_block_num": INT, "last_block_time": TEXT|null}
+================================================================================
+*/
+BEGIN
+  -- No cache - sync status needs real-time accuracy
+  PERFORM set_config('response.headers', '[{"Cache-Control": "public, max-age=0"}]', true);
+
+  RETURN reptracker_backend.sync_status();
+END
+$$;
+
+RESET ROLE;

@@ -26,7 +26,8 @@ ENDPOINTS_IN_ORDER="
 ../$endpoints/endpoint_schema.sql
 ../$endpoints/get_reputation.sql
 ../$endpoints/get_rep_version.sql
-../$endpoints/get_rep_last_synced_block.sql"
+../$endpoints/get_rep_last_synced_block.sql
+../$endpoints/get_rep_sync_status.sql"
 
 # Function to reverse the lines
 reverse_lines() {
