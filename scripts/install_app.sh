@@ -106,6 +106,7 @@ install_schema() {
   psql "$POSTGRES_ACCESS" -v ON_ERROR_STOP=on -c "SET custom.swagger_url = '$SWAGGER_URL'; SET SEARCH_PATH TO ${REPTRACKER_SCHEMA};" -f "$SRCPATH/endpoints/endpoint_schema.sql"
   psql "$POSTGRES_ACCESS" -v ON_ERROR_STOP=on -c "SET SEARCH_PATH TO ${REPTRACKER_SCHEMA};" -f "$SRCPATH/endpoints/get_reputation.sql"
   psql "$POSTGRES_ACCESS" -v ON_ERROR_STOP=on -c "SET SEARCH_PATH TO ${REPTRACKER_SCHEMA};" -f "$SRCPATH/endpoints/get_rep_last_synced_block.sql"
+  psql "$POSTGRES_ACCESS" -v ON_ERROR_STOP=on -c "SET SEARCH_PATH TO ${REPTRACKER_SCHEMA};" -f "$SRCPATH/endpoints/get_rep_sync_status.sql"
   psql "$POSTGRES_ACCESS" -v ON_ERROR_STOP=on -c "SET SEARCH_PATH TO ${REPTRACKER_SCHEMA};" -f "$SRCPATH/endpoints/get_rep_version.sql"
 
   # Backend utilities (must be installed before operation parsers that depend on them)
@@ -114,6 +115,7 @@ install_schema() {
   psql "$POSTGRES_ACCESS" -v ON_ERROR_STOP=on -c "SET SEARCH_PATH TO ${REPTRACKER_SCHEMA};" -f "$SRCPATH/backend/utilities/account.sql"
   psql "$POSTGRES_ACCESS" -v ON_ERROR_STOP=on -c "SET SEARCH_PATH TO ${REPTRACKER_SCHEMA};" -f "$SRCPATH/backend/utilities/validators.sql"
   psql "$POSTGRES_ACCESS" -v ON_ERROR_STOP=on -c "SET SEARCH_PATH TO ${REPTRACKER_SCHEMA};" -f "$SRCPATH/backend/utilities/exceptions.sql"
+  psql "$POSTGRES_ACCESS" -v ON_ERROR_STOP=on -c "SET SEARCH_PATH TO ${REPTRACKER_SCHEMA};" -f "$SRCPATH/backend/utilities/sync_status.sql"
 
   # Backend operation parsers
   psql "$POSTGRES_ACCESS" -v ON_ERROR_STOP=on -c "SET SEARCH_PATH TO ${REPTRACKER_SCHEMA};" -f "$SRCPATH/backend/operation_parsers/vote_operations.sql"

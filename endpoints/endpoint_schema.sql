@@ -139,8 +139,9 @@ declare
         "tags": [
           "Other"
         ],
-        "summary": "Get last block number synced by reputation tracker",
-        "description": "Get the block number of the last block synced by reputation tracker.\n\nSQL example\n* `SELECT * FROM reptracker_endpoints.get_rep_last_synced_block();`\n\nREST call example\n* `GET ''https://%1$s/reputation-api/last-synced-block''`\n",
+        "summary": "Get last block number synced by reputation tracker (deprecated)",
+        "deprecated": true,
+        "description": "**Deprecated** \u2014 superseded by `/sync-status`, which returns the block\nnumber together with its timestamp (enabling single-call staleness\nchecks). This endpoint remains for backward compatibility.\n\nGet the block number of the last block synced by reputation tracker.\n\nSQL example\n* `SELECT * FROM reptracker_endpoints.get_rep_last_synced_block();`\n\nREST call example\n* `GET ''https://%1$s/reputation-api/last-synced-block''`\n",
         "operationId": "reptracker_endpoints.get_rep_last_synced_block",
         "responses": {
           "200": {
@@ -156,6 +157,44 @@ declare
           },
           "404": {
             "description": "No blocks synced"
+          }
+        }
+      }
+    },
+    "/sync-status": {
+      "get": {
+        "tags": [
+          "Other"
+        ],
+        "summary": "Get reputation tracker''s sync status",
+        "description": "Get the last block processed by reputation tracker as an object containing\nboth the block number and its timestamp (UTC). This is the uniform\nHAF-app sync/health endpoint: the timestamp lets a consumer compute\nstaleness with a single call (`age = now() - last_block_time`) without\nneeding a separate head-block reference. Supersedes the deprecated\n`/last-synced-block`.\n\nSQL example\n* `SELECT * FROM reptracker_endpoints.get_rep_sync_status();`\n\nREST call example\n* `GET ''https://%1$s/reputation-api/sync-status''`\n",
+        "operationId": "reptracker_endpoints.get_rep_sync_status",
+        "responses": {
+          "200": {
+            "description": "Last block processed by reputation tracker and its timestamp.\n`last_block_time` is null if no block has been processed yet.\n\n* Returns `JSON`\n",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "x-sql-datatype": "JSON",
+                  "properties": {
+                    "last_block_num": {
+                      "type": "integer",
+                      "description": "highest block number processed by the app"
+                    },
+                    "last_block_time": {
+                      "type": "string",
+                      "format": "date-time",
+                      "description": "UTC timestamp of that block"
+                    }
+                  }
+                },
+                "example": {
+                  "last_block_num": 5000000,
+                  "last_block_time": "2016-09-15T19:47:21"
+                }
+              }
+            }
           }
         }
       }

@@ -13,8 +13,13 @@ $BODY$
   get:
     tags:
       - Other
-    summary: Get last block number synced by reputation tracker
+    summary: Get last block number synced by reputation tracker (deprecated)
+    deprecated: true
     description: |
+      **Deprecated** — superseded by `/sync-status`, which returns the block
+      number together with its timestamp (enabling single-call staleness
+      checks). This endpoint remains for backward compatibility.
+
       Get the block number of the last block synced by reputation tracker.
 
       SQL example
