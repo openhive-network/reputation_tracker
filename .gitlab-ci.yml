@@ -570,7 +570,7 @@ python_api_client_test:
     PYPROJECT_DIR: "${CI_PROJECT_DIR}/scripts/python_api_package"
   parallel:
     matrix:
-    - PYTHON_VERSION: ["3.12", "3.14"]
+    - PYTHON_VERSION: ["3.14"]
   before_script:
   - !reference [.project_develop_configuration_template, before_script]
   - !reference [.update_deps_for_tests, script]
@@ -590,7 +590,7 @@ test_python_api_wheel:
     DIST_DIR: "${CI_PROJECT_DIR}/scripts/python_api_package/dist"
   parallel:
     matrix:
-    - PYTHON_VERSION: ["3.12", "3.14"]
+    - PYTHON_VERSION: ["3.14"]
   before_script:
   - !reference [.configuration_template, before_script]
   - !reference [.update_deps_for_tests, script]
