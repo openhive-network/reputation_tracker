@@ -68,6 +68,19 @@ POSTGRES_ACCESS=${POSTGRES_URL:-"postgresql://$POSTGRES_USER@$POSTGRES_HOST:$POS
 process_blocks() {
     local n_blocks="${1:-null}"
     log_file="reptracker_sync.log"
+
+    # The generic HAF block-processing driver (haf#341) runs the registered
+    # ${REPTRACKER_SCHEMA}.process_blocks procedure per delivered range and idles
+    # on its own connection between blocks. It ships with the psql base image.
+    # exec it directly (no tee pipeline): as PID 1 it must receive SIGTERM itself
+    # to stop cleanly; a bash parent would swallow the signal until docker's kill.
+    if command -v haf_app_driver.py >/dev/null 2>&1; then
+        local limit_arg=()
+        [ "$n_blocks" != "null" ] && limit_arg=(--stop-at-block="$n_blocks")
+        exec haf_app_driver.py --app="${REPTRACKER_SCHEMA}" --postgres-url="$POSTGRES_ACCESS" "${limit_arg[@]}"
+    fi
+
+    echo "WARNING: haf_app_driver.py not found, falling back to the legacy CALL main() loop"
     # record the startup time for use in health checks
     date -uIseconds > /tmp/block_processing_startup_time.txt
 

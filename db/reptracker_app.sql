@@ -548,4 +548,41 @@ BEGIN
 END
 $$;
 
+
+/**
+ * process_blocks()
+ * ----------------
+ * Entry point for the generic HAF block-processing driver (haf_app_driver.py,
+ * haf#341): processes one range delivered by hive.app_next_iteration. The driver
+ * owns the transaction, so this must not COMMIT.
+ *
+ * @param _block_range  Range of blocks to process
+ */
+DO $$
+DECLARE
+  __schema_name VARCHAR;
+BEGIN
+  SHOW SEARCH_PATH INTO __schema_name;
+
+  EXECUTE format(
+    $BODY$
+      CREATE OR REPLACE PROCEDURE %I.process_blocks( _block_range hive.blocks_range )
+      LANGUAGE 'plpgsql'
+      SET search_path = %I, pg_catalog
+      AS
+      $pb$
+      -- the application's procedures use unqualified names; the legacy loop got
+      -- its search_path from process_blocks.sh, the driver's connection has none
+      BEGIN
+        CALL %I.reptracker_process_blocks( %L, _block_range );
+      END
+      $pb$
+    $BODY$, __schema_name, __schema_name, __schema_name, __schema_name);
+
+  -- Register with the HAF application registry so a generic driver can run
+  -- this application and other applications can declare dependencies on it.
+  PERFORM hive.app_register( __schema_name, ARRAY[ __schema_name ]::hive.contexts_group, __schema_name || '.process_blocks' );
+END
+$$;
+
 RESET ROLE;
