@@ -77,7 +77,7 @@ process_blocks() {
     if command -v haf_app_driver.py >/dev/null 2>&1; then
         local limit_arg=()
         [ "$n_blocks" != "null" ] && limit_arg=(--stop-at-block="$n_blocks")
-        exec haf_app_driver.py --app="${REPTRACKER_SCHEMA}" --postgres-url="$POSTGRES_ACCESS" "${limit_arg[@]}"
+        exec haf_app_driver.py --app="${REPTRACKER_SCHEMA}" --postgres-url="$POSTGRES_ACCESS" --lock=reputation_tracker "${limit_arg[@]}"
     fi
 
     echo "WARNING: haf_app_driver.py not found, falling back to the legacy CALL main() loop"
