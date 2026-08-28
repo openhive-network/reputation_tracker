@@ -377,7 +377,7 @@ BEGIN
   PERFORM set_config('synchronous_commit', 'ON', false);
 
   IF _logs THEN
-    RAISE NOTICE 'Reptracker processing block: %...', _from;
+    RAISE DEBUG 'Reptracker processing block: %...', _from;
     __start_ts := clock_timestamp();
   END IF;
 
@@ -385,7 +385,7 @@ BEGIN
 
   IF _logs THEN
     __end_ts := clock_timestamp();
-    RAISE NOTICE 'Reptracker processed block % successfully in % s', _from, (EXTRACT(EPOCH FROM __end_ts - __start_ts));
+    RAISE DEBUG 'Reptracker processed block % successfully in % s', _from, (EXTRACT(EPOCH FROM __end_ts - __start_ts));
   END IF;
 END
 $$;
