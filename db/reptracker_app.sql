@@ -561,6 +561,7 @@ $$;
 DO $$
 DECLARE
   __schema_name VARCHAR;
+  __owning_app TEXT;
 BEGIN
   SHOW SEARCH_PATH INTO __schema_name;
 
@@ -581,7 +582,18 @@ BEGIN
 
   -- Register with the HAF application registry so a generic driver can run
   -- this application and other applications can declare dependencies on it.
-  PERFORM hive.app_register( __schema_name, ARRAY[ __schema_name ]::hive.contexts_group, __schema_name || '.process_blocks' );
+  -- An embedding application may re-register this context as part of its own
+  -- context group afterwards. On a re-install under such an application the
+  -- context already belongs to it, and registering would fail: leave the
+  -- embedding registration in place.
+  SELECT a.name INTO __owning_app
+  FROM hafd.applications a
+  WHERE a.name != __schema_name AND a.contexts @> ARRAY[ __schema_name::TEXT ];
+  IF __owning_app IS NOT NULL THEN
+    RAISE NOTICE 'Context % already belongs to application %; keeping that registration', __schema_name, __owning_app;
+  ELSE
+    PERFORM hive.app_register( __schema_name, ARRAY[ __schema_name ]::hive.contexts_group, __schema_name || '.process_blocks' );
+  END IF;
 END
 $$;
 
