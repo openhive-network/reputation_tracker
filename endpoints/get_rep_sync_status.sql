@@ -67,7 +67,8 @@ PURPOSE:
 
 DATA SOURCE:
   reptracker_backend.sync_status() — reads current_block_num from the HAF
-  context and joins hafd.blocks for the block's created_at.
+  context and reads the block's created_at through the context's blocks_view
+  (covers blocks still in hafd.blocks_reversible).
 
 CACHING:
   No cache (max-age=0): used for real-time sync-status / health monitoring.
