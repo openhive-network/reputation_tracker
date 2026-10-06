@@ -118,6 +118,18 @@ export API_VERSION
 
 docker buildx bake --provenance=false --progress="$PROGRESS_DISPLAY" "$TARGET"
 
+# Rewriter image tags mirror the main image's docker-bake tags:
+# always the build tag (short SHA on CI), 'latest' on develop, and the
+# version on protected tags - so publish_images can retag the tested image
+# instead of rebuilding it.
+REWRITER_TAGS=("$CI_REGISTRY_IMAGE/postgrest-rewriter:$BASE_TAG")
+if [[ "${CI_COMMIT_BRANCH:-}" == "${CI_DEFAULT_BRANCH:-develop}" ]]; then
+  REWRITER_TAGS+=("$CI_REGISTRY_IMAGE/postgrest-rewriter:latest")
+fi
+if [[ -n "${CI_COMMIT_TAG:-}" ]]; then
+  REWRITER_TAGS+=("$CI_REGISTRY_IMAGE/postgrest-rewriter:$CI_COMMIT_TAG")
+fi
+
 docker buildx build \
     --build-arg API_VERSION="$API_VERSION" \
     --build-arg BUILD_TIME="$BUILD_TIME" \
@@ -126,9 +138,11 @@ docker buildx build \
     --build-arg GIT_LAST_LOG_MESSAGE="$GIT_LAST_LOG_MESSAGE" \
     --build-arg GIT_LAST_COMMITTER="$GIT_LAST_COMMITTER" \
     --build-arg GIT_LAST_COMMIT_DATE="$GIT_LAST_COMMIT_DATE" \
-    --tag "$CI_REGISTRY_IMAGE/postgrest-rewriter:$BASE_TAG" \
+    "${REWRITER_TAGS[@]/#/--tag=}" \
     --load \
     --file Dockerfile.rewriter .
-docker push "$CI_REGISTRY_IMAGE/postgrest-rewriter:$BASE_TAG"
+for rewriter_tag in "${REWRITER_TAGS[@]}"; do
+  docker push "$rewriter_tag"
+done
 
 popd

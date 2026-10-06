@@ -300,6 +300,15 @@ prepare_haf_data:
         docker pull "$CI_REGISTRY_IMAGE${NAME:+/$NAME}${BASE_REPO_NAME:+/$BASE_REPO_NAME}:${BASE_TAG}"
         docker tag "$CI_REGISTRY_IMAGE${NAME:+/$NAME}${BASE_REPO_NAME:+/$BASE_REPO_NAME}:${BASE_TAG}" "${CI_REGISTRY_IMAGE}:${CI_COMMIT_TAG}"
         docker push "${CI_REGISTRY_IMAGE}:${CI_COMMIT_TAG}"
+        # Tag postgrest-rewriter image (also built by build_docker_image.sh)
+        if image-exists "${CI_REGISTRY_IMAGE}/postgrest-rewriter:${BASE_TAG}"; then
+          echo "Tagging postgrest-rewriter image..."
+          docker pull "${CI_REGISTRY_IMAGE}/postgrest-rewriter:${BASE_TAG}"
+          docker tag "${CI_REGISTRY_IMAGE}/postgrest-rewriter:${BASE_TAG}" "${CI_REGISTRY_IMAGE}/postgrest-rewriter:${CI_COMMIT_TAG}"
+          docker push "${CI_REGISTRY_IMAGE}/postgrest-rewriter:${CI_COMMIT_TAG}"
+        else
+          echo "WARNING: postgrest-rewriter:${BASE_TAG} not found, skipping retag"
+        fi
       fi
     else
       echo "Baking $CI_REGISTRY_IMAGE${NAME:+/$NAME}${BASE_REPO_NAME:+/$BASE_REPO_NAME}:${BASE_TAG} image..."
@@ -732,13 +741,13 @@ deploy_python_api_packages_to_gitlab:
   tags:
   - public-runner-docker
 
-build_and_publish_image:
-  stage: publish
-  extends: .publish_docker_image_template
-  before_script:
-  - !reference [.publish_docker_image_template, before_script]
-  script:
-  - scripts/ci-helpers/build_and_publish_instance.sh
+# Publish to registry.hive.blog - pull/retag/push only, no rebuild.
+# The images were built (and tagged with the release version) by
+# docker-setup-docker-image-build and are the ones the test stage ran against.
+publish_images:
+  extends: .docker_publish_job_template
+  variables:
+    PUBLISH_IMAGES: "reputation_tracker postgrest-rewriter"
   tags:
   - public-runner-docker
 
