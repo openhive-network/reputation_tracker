@@ -6,3 +6,7 @@ accounts_dump.json
 endpoints_openapi
 build
 process_openapi.py
+
+# AIDEV check reports (.aidev/run-checks.sh)
+/test-results/
+/.aidev/__pycache__/
