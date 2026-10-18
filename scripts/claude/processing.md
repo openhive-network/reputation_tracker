@@ -154,8 +154,14 @@ This produces scores roughly in range 25-75 for typical accounts.
 
 - Processes blocks in batches of 10,000
 - Uses `synchronous_commit = OFF` for throughput
-- Requests periodic table vacuums every 10-100 minutes
+- During the initial sync only, requests VACUUM FULL of `account_reputations` and `active_votes` at most every 10 minutes
 - Called via `reptracker_massive_processing()`
+- HAF re-enters this stage for any catch-up of more than 101 blocks (e.g. after a restart). Those catch-ups request no vacuum: a VACUUM FULL holds an ACCESS EXCLUSIVE lock that stalls block processing and drops the table's visibility map
+- `permlinks` is insert-only and is never requested a vacuum; it is created with reloptions (`autovacuum_vacuum_insert_scale_factor = 0`, insert threshold 100000, `autovacuum_freeze_min_age = 0`, analyze threshold 1000000) so autovacuum keeps its visibility map and statistics current
+
+### Initial-sync marker
+
+`reptracker_app_status.is_initial_sync_finished` (read by `is_initial_sync_finished()`) persists across restarts. The first LIVE iteration calls `finish_initial_sync()`, which sets it and requests one `VACUUM (FREEZE, ANALYZE)` (HAF request kind `'freeze'`, haf#360) of `permlinks`, `account_reputations` and `active_votes`. On a HAF whose `hive.app_request_table_vacuum()` has no `_kind` argument, the requests are skipped with a NOTICE. Reptracker never drops its indexes, so HAF's own post-`app_restore_indexes()` freeze does not cover it.
 
 ### LIVE (Real-time Sync)
 
@@ -195,6 +201,8 @@ This produces scores roughly in range 25-75 for typical accounts.
 | `reptracker_process_blocks()` | `db/reptracker_app.sql` | Dispatch to massive/single processing |
 | `reptracker_massive_processing()` | `db/reptracker_app.sql` | Bulk sync mode |
 | `reptracker_single_processing()` | `db/reptracker_app.sql` | Live sync mode |
+| `is_initial_sync_finished()` | `db/reptracker_app.sql` | Whether the first LIVE iteration has happened |
+| `finish_initial_sync()` | `db/reptracker_app.sql` | Set the marker, request post-sync freeze vacuums |
 | `continueProcessing()` | `db/reptracker_app.sql` | Check stop flag |
 | `allowProcessing()` | `db/reptracker_app.sql` | Enable processing |
 | `stopProcessing()` | `db/reptracker_app.sql` | Request graceful stop |

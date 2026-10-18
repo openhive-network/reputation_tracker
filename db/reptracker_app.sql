@@ -73,7 +73,8 @@ BEGIN
   CREATE TABLE IF NOT EXISTS reptracker_app_status
   (
     continue_processing BOOLEAN NOT NULL, -- TRUE to continue, FALSE to stop
-    is_accounts_copied  BOOLEAN           -- Flag for account migration status
+    is_accounts_copied  BOOLEAN,          -- Flag for account migration status
+    is_initial_sync_finished BOOLEAN NOT NULL DEFAULT FALSE -- Set at the first LIVE iteration; HAF re-enters MASSIVE_PROCESSING for catch-ups
   );
   -- Initialize control table
   INSERT INTO reptracker_app_status (continue_processing, is_accounts_copied) VALUES (True, False);
@@ -97,10 +98,19 @@ BEGIN
 
   ------------- PERMLINKS ----------------
   -- Dictionary table for post permlinks to reduce storage
+  -- Insert-only: autovacuum's dead-tuple trigger never fires and the default insert
+  -- threshold (20% of the table) is rarely reached, so fixed thresholds keep its
+  -- visibility map and statistics current.
   CREATE TABLE IF NOT EXISTS permlinks
   (
     permlink_id SERIAL PRIMARY KEY, -- Auto-incrementing ID
     permlink    TEXT UNIQUE         -- The actual permlink string
+  ) WITH (
+    autovacuum_vacuum_insert_scale_factor = 0,
+    autovacuum_vacuum_insert_threshold = 100000,
+    autovacuum_freeze_min_age = 0,
+    autovacuum_analyze_scale_factor = 0,
+    autovacuum_analyze_threshold = 1000000
   );
   PERFORM hive.app_register_table( __schema_name, 'permlinks', __schema_name );
 
@@ -306,6 +316,61 @@ BEGIN
 END
 $$;
 
+/**
+ * is_initial_sync_finished()
+ * --------------------------
+ * @returns TRUE once the application has reached the LIVE stage for the first time
+ */
+CREATE OR REPLACE FUNCTION is_initial_sync_finished()
+RETURNS BOOLEAN
+LANGUAGE 'plpgsql' STABLE
+AS
+$$
+BEGIN
+  RETURN is_initial_sync_finished FROM reptracker_app_status LIMIT 1;
+END
+$$;
+
+/**
+ * finish_initial_sync()
+ * ---------------------
+ * Mark the initial sync as finished and request one VACUUM (FREEZE, ANALYZE) of
+ * each application table, which gives them a visibility map after the bulk load.
+ *
+ * The 'freeze' request kind needs hive.app_request_table_vacuum() with a _kind
+ * argument; on an older HAF the requests are skipped with a NOTICE, since its only
+ * kind is VACUUM FULL, which takes an exclusive lock and leaves no visibility map.
+ *
+ * @param _schema_name  Schema holding the application tables
+ */
+CREATE OR REPLACE FUNCTION finish_initial_sync(_schema_name TEXT)
+RETURNS VOID
+LANGUAGE 'plpgsql' VOLATILE
+AS
+$$
+DECLARE
+  _table TEXT;
+  _has_kind BOOLEAN;
+BEGIN
+  UPDATE reptracker_app_status SET is_initial_sync_finished = TRUE;
+
+  _has_kind := EXISTS (
+    SELECT 1 FROM pg_proc p
+    JOIN pg_namespace n ON p.pronamespace = n.oid
+    WHERE n.nspname = 'hive' AND p.proname = 'app_request_table_vacuum'
+      AND '_kind' = ANY(p.proargnames)
+  );
+
+  FOREACH _table IN ARRAY ARRAY['permlinks', 'account_reputations', 'active_votes'] LOOP
+    IF _has_kind THEN
+      PERFORM hive.app_request_table_vacuum(_schema_name, _table, NULL, 'freeze');
+    ELSE
+      RAISE NOTICE 'HAF has no ''freeze'' vacuum request kind — skipping VACUUM (FREEZE, ANALYZE) of %.%', _schema_name, _table;
+    END IF;
+  END LOOP;
+END
+$$;
+
 -- ============================================================================
 -- BLOCK PROCESSING FUNCTIONS
 -- ============================================================================
@@ -505,8 +570,11 @@ $$;
  * Routes to either massive or single processing based on current HAF stage.
  *
  * Behavior by stage:
- * - MASSIVE_PROCESSING: Calls reptracker_massive_processing() with table vacuums
- * - LIVE: Calls reptracker_single_processing()
+ * - MASSIVE_PROCESSING: Calls reptracker_massive_processing(); during the initial
+ *   sync only, also requests periodic VACUUM FULL of account_reputations and
+ *   active_votes (never of the insert-only permlinks)
+ * - LIVE: Calls reptracker_single_processing(); the first LIVE iteration calls
+ *   finish_initial_sync(), so later catch-ups request no rewrite
  *
  * @param _context_name  HAF context name (typically schema name)
  * @param _block_range   Range of blocks to process (first_block, last_block)
@@ -531,11 +599,17 @@ BEGIN
       BEGIN
         IF hive.get_current_stage_name(_context_name) = 'MASSIVE_PROCESSING' THEN
           CALL reptracker_massive_processing(_block_range.first_block, _block_range.last_block, _logs);
-          -- Request periodic table vacuums during bulk processing
-          PERFORM hive.app_request_table_vacuum('%s', 'account_reputations', interval '10 minutes');
-          PERFORM hive.app_request_table_vacuum('%s', 'active_votes', interval '10 minutes');
-          PERFORM hive.app_request_table_vacuum('%s', 'permlinks', interval '100 minutes');
+          -- HAF re-enters MASSIVE_PROCESSING for catch-ups; a VACUUM FULL there would
+          -- block processing on its exclusive lock
+          IF NOT is_initial_sync_finished() THEN
+            PERFORM hive.app_request_table_vacuum('%s', 'account_reputations', interval '10 minutes');
+            PERFORM hive.app_request_table_vacuum('%s', 'active_votes', interval '10 minutes');
+          END IF;
           RETURN;
+        END IF;
+
+        IF NOT is_initial_sync_finished() THEN
+          PERFORM finish_initial_sync('%s');
         END IF;
 
         IF NOT do_rep_indexes_exist() THEN
