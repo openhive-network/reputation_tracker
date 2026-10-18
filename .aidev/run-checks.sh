@@ -16,7 +16,8 @@
 #                     as haf_shared_consumer), scripts/install_app.sh into it
 #   - sync            the candidate's block processing over the clone's 5,000,000
 #                     blocks (haf_app_driver.py, as scripts/process_blocks.sh runs it),
-#                     then ANALYZE
+#                     then ANALYZE, then the vacuum requests (no permlinks request,
+#                     its reloptions, the post-sync freeze requests)
 #   - regression      tests/regression: every account's reputation at block 5,000,000
 #                     against hived's reputation_api.get_account_reputations dump
 #   - tavern          the tavern pattern tests (tests/tavern) against PostgREST over
@@ -182,7 +183,39 @@ sync_blocks() {
     echo "processed up to block $block"
     [ "$block" -ge "$STOP_AT_BLOCK" ] || { echo "expected block $STOP_AT_BLOCK"; return 1; }
     q -c "SET ROLE reptracker_owner; ANALYZE;" 2>&1 | grep -v 'WARNING:  permission denied to analyze' || true
+    check_vacuum_requests || return 1
     synced=yes
+}
+
+# The insert-only permlinks is never requested a vacuum, keeps its autovacuum
+# reloptions, and the end of the initial sync (finish_initial_sync, in a transaction
+# rolled back here) requests one 'freeze' per table and no VACUUM FULL, or none at
+# all on a HAF without request kinds.
+check_vacuum_requests() {
+    local reloptions permlinks has_kind result
+    reloptions="$(q -Atc "select array_to_string(reloptions, ',') from pg_class where oid = '$SCHEMA.permlinks'::regclass")" || return 1
+    echo "permlinks reloptions: $reloptions"
+    [ "$reloptions" = "autovacuum_vacuum_insert_scale_factor=0,autovacuum_vacuum_insert_threshold=100000,autovacuum_freeze_min_age=0,autovacuum_analyze_scale_factor=0,autovacuum_analyze_threshold=1000000" ] \
+        || { echo "permlinks lacks its insert-only reloptions"; return 1; }
+    permlinks="$(q -Atc "select count(*) from hafd.vacuum_requests where schema_name = '$SCHEMA' and table_name = 'permlinks'")" || return 1
+    echo "vacuum requests for permlinks after the sync: $permlinks"
+    [ "$permlinks" = 0 ] || return 1
+    has_kind="$(q -Atc "select exists (select 1 from information_schema.columns where table_schema = 'hafd' and table_name = 'vacuum_requests' and column_name = 'kind')")" || return 1
+    if [ "$has_kind" = t ]; then
+        result="$(q -At -c "BEGIN" -c "SET ROLE reptracker_owner" -c "SET search_path TO $SCHEMA" \
+            -c "SELECT finish_initial_sync('$SCHEMA')" -c "RESET ROLE" \
+            -c "SELECT string_agg(table_name || ':' || kind || ':' || status, ',' ORDER BY table_name, kind) FROM hafd.vacuum_requests WHERE schema_name = '$SCHEMA' AND (kind = 'freeze' OR table_name = 'permlinks')" \
+            -c "ROLLBACK" | grep ':')" || return 1
+        echo "requests after finish_initial_sync: $result"
+        [ "$result" = "account_reputations:freeze:requested,active_votes:freeze:requested,permlinks:freeze:requested" ] || return 1
+    else
+        echo "this HAF has no vacuum request kinds: finish_initial_sync must request nothing"
+        result="$(q -At -c "BEGIN" -c "SET ROLE reptracker_owner" -c "SET search_path TO $SCHEMA" \
+            -c "SELECT finish_initial_sync('$SCHEMA')" -c "RESET ROLE" \
+            -c "SELECT 'rows:' || count(*) FROM hafd.vacuum_requests WHERE schema_name = '$SCHEMA' AND table_name = 'permlinks'" \
+            -c "ROLLBACK" | grep '^rows:')" || return 1
+        [ "$result" = "rows:0" ] || return 1
+    fi
 }
 
 # tests/regression/run_test.sh against the clone: install the test schema, load
