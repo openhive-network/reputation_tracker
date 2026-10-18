@@ -1,5 +1,13 @@
 SET ROLE reptracker_owner;
 
+DO $$
+DECLARE
+  __schema_name VARCHAR;
+BEGIN
+SHOW SEARCH_PATH INTO __schema_name;
+EXECUTE format(
+$BODY$
+
 /** openapi:paths
 /version:
   get:
@@ -36,13 +44,18 @@ RETURNS TEXT
 -- openapi-generated-code-end
 LANGUAGE 'plpgsql' STABLE
 AS
-$$
+$pb$
 BEGIN
 --100000s because version of hafbe doesn't change as often, but it may change
 PERFORM set_config('response.headers', '[{"Cache-Control": "public, max-age=100000"}]', true);
 
-RETURN git_hash FROM version;
+RETURN git_hash FROM %1$I.version;
 
+END
+$pb$;
+
+$BODY$,
+__schema_name);
 END
 $$;
 

@@ -40,9 +40,9 @@ SELECT * FROM reptracker_endpoints.get_account_reputation('blocktrades');
 ```
 
 **Return Values**:
-- Positive integer: Calculated reputation score
-- `0`: Account has no reputation (new or never voted on)
-- `NULL`: Account doesn't exist
+- Integer: Calculated reputation score (negative for negative raw reputation)
+- `25`: Account exists but has no reputation row or raw reputation 0 (same as hivemind's `rep_log10()`)
+- HTTP 400 `Account '<name>' does not exist`: Account doesn't exist
 
 **Reputation Formula**:
 ```
@@ -179,7 +179,7 @@ Located in `backend/utilities/reputation_constants.sql`:
 
 | Role | Access |
 |------|--------|
-| `reptracker_user` | PostgREST uses this role - read-only access to endpoint functions |
+| `reptracker_user` | PostgREST uses this role - read-only access to endpoint functions; `statement_timeout = 10s` (`db/builtin_roles.sql`) |
 | `reptracker_owner` | Owns all schemas - used for processing |
 
 ## Adding New Endpoints
@@ -190,6 +190,7 @@ To add a new endpoint:
 2. Use `reptracker_endpoints` schema for the function
 3. Run `scripts/generate_openapi.sh` to regenerate `endpoint_schema.sql`
 4. Grant execute permission to `reptracker_user`
+5. Qualify every app-schema table: endpoints are called from sessions whose `search_path` lacks the app schema. Wrap the definition in a `DO` block that reads the install schema with `SHOW SEARCH_PATH` and builds the function with `format()` (`%1$I.table`), as `get_reputation.sql` and `get_rep_version.sql` do. Any other literal `%` in the body must then be written `%%`.
 
 Example template:
 ```sql
