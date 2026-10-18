@@ -17,7 +17,7 @@ Reputation processing follows a multi-phase pipeline that extracts vote operatio
 │     Parse JSON bodies → (author, voter, permlink, rshares)                  │
 │                              ↓                                              │
 │  Phase 2: account_ids                                                       │
-│     Resolve account names → integer IDs (batched lookup)                    │
+│     Resolve account names → integer IDs (per-name index probe)              │
 │                              ↓                                              │
 │  Phase 3: permlink dictionary                                               │
 │     Insert new permlinks, fetch IDs for all                                 │
