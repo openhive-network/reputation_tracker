@@ -97,9 +97,12 @@ vote_operations_raw AS MATERIALIZED (
 -----------------------------------------------------------------------------------
 -- Instead of N correlated subqueries (one per operation), we:
 --   1. Collect unique account names
---   2. Single bulk lookup against accounts_view
+--   2. One index probe per unique name against accounts_view
 --   3. Join IDs back to operations
 -- This reduces account lookups from O(N*2) to O(unique_accounts)
+-- The lateral LIMIT 1 form keeps the lookup an index probe: the HAF context
+-- view's block_num predicate is badly overestimated, which otherwise makes a
+-- plain join plan as a hash join over a seq scan of the whole accounts table.
 
 unique_accounts AS (
   SELECT DISTINCT name FROM (
@@ -112,7 +115,7 @@ unique_accounts AS (
 account_ids AS (
   SELECT ua.name, ha.id
   FROM unique_accounts ua
-  JOIN accounts_view ha ON ha.name = ua.name
+  CROSS JOIN LATERAL (SELECT av.id FROM accounts_view av WHERE av.name = ua.name LIMIT 1) ha
 ),
 
 -- Reassemble operations with integer IDs instead of text names
