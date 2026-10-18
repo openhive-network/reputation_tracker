@@ -28,6 +28,8 @@
  * ---------------
  * - All schema objects are owned by reptracker_owner
  * - reptracker_user is granted SELECT on tables after installation
+ * - reptracker_user statements are capped at 10s so a stalled API call cannot
+ *   hold a pooled connection indefinitely
  * - PostgREST connects as reptracker_user for safe API access
  * - Block processing runs as reptracker_owner for write access
  */
@@ -47,6 +49,8 @@ BEGIN
 EXCEPTION WHEN duplicate_object THEN RAISE NOTICE '%, skipping', SQLERRM USING ERRCODE = SQLSTATE;
 END
 $$;
+
+ALTER ROLE reptracker_user SET statement_timeout = '10s';
 
 -- Allow haf_admin to act as reptracker_owner (for installation scripts)
 GRANT reptracker_owner TO haf_admin;

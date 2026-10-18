@@ -27,6 +27,9 @@ tests/tavern/
 │   ├── blocktrades.pat.json      # Expected response pattern
 │   ├── gtg.tavern.yaml
 │   ├── gtg.pat.json
+│   ├── negative_reputation.*     # wang: negative raw reputation
+│   ├── no_reputation_row.*       # steem: existing account, no row -> 25
+│   ├── zero_reputation.*         # inbamnn: row with raw reputation 0 -> 25
 │   ├── non_existent_account.tavern.yaml
 │   └── non_existent_account.pat.json
 └── get_rep_last_synced_block/    # Sync status tests
