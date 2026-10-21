@@ -65,6 +65,19 @@ BEGIN
     _stages => synchronization_stages
   );
 
+  -- Block processing reads hafd.operations only by block range and hafd.accounts by
+  -- name, indexes HAF keeps through a keep-monotonic massive sync, so the context
+  -- can process blocks while hived still replays.
+  IF EXISTS (
+    SELECT 1 FROM pg_proc p
+    JOIN pg_namespace n ON p.pronamespace = n.oid
+    WHERE n.nspname = 'hive' AND p.proname = 'app_context_set_early_block_processing'
+  ) THEN
+    PERFORM hive.app_context_set_early_block_processing(ARRAY[__schema_name]::hive.contexts_group);
+  ELSE
+    RAISE NOTICE 'HAF has no hive.app_context_set_early_block_processing() — context % processes blocks once HAF is ready', __schema_name;
+  END IF;
+
   RAISE NOTICE 'Attempting to create an application schema tables...';
 
   ------------- CONTROL TABLES ----------------
@@ -573,8 +586,9 @@ $$;
  * - MASSIVE_PROCESSING: Calls reptracker_massive_processing(); during the initial
  *   sync only, also requests periodic VACUUM FULL of account_reputations and
  *   active_votes (never of the insert-only permlinks)
- * - LIVE: Calls reptracker_single_processing(); the first LIVE iteration calls
- *   finish_initial_sync(), so later catch-ups request no rewrite
+ * - LIVE: Calls reptracker_single_processing(); the first LIVE iteration once
+ *   hive.is_instance_ready() holds calls finish_initial_sync(), so later catch-ups
+ *   request no rewrite
  *
  * @param _context_name  HAF context name (typically schema name)
  * @param _block_range   Range of blocks to process (first_block, last_block)
@@ -608,11 +622,14 @@ BEGIN
           RETURN;
         END IF;
 
-        IF NOT is_initial_sync_finished() THEN
+        -- An early-processing context can reach the LIVE stage near the end of HAF's
+        -- massive sync, before HAF has restored its indexes: the freeze vacuums and the
+        -- CREATE INDEX on hafd.operations, which blocks hived's inserts, wait for HAF
+        IF NOT is_initial_sync_finished() AND hive.is_instance_ready() THEN
           PERFORM finish_initial_sync('%s');
         END IF;
 
-        IF NOT do_rep_indexes_exist() THEN
+        IF NOT do_rep_indexes_exist() AND hive.is_instance_ready() THEN
           PERFORM create_rep_indexes();
         END IF;
         CALL reptracker_single_processing(_block_range.first_block, _block_range.last_block, _logs);
