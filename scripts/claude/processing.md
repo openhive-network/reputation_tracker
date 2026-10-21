@@ -159,9 +159,13 @@ This produces scores roughly in range 25-75 for typical accounts.
 - HAF re-enters this stage for any catch-up of more than 101 blocks (e.g. after a restart). Those catch-ups request no vacuum: a VACUUM FULL holds an ACCESS EXCLUSIVE lock that stalls block processing and drops the table's visibility map
 - `permlinks` is insert-only and is never requested a vacuum; it is created with reloptions (`autovacuum_vacuum_insert_scale_factor = 0`, insert threshold 100000, `autovacuum_freeze_min_age = 0`, analyze threshold 1000000) so autovacuum keeps its visibility map and statistics current
 
+### Processing while hived replays
+
+The install opts the context in with `hive.app_context_set_early_block_processing()` (skipped with a NOTICE on a HAF without it). With hived's `psql-massive-index-policy = keep-monotonic`, `hive.app_next_iteration` then delivers irreversible blocks while hived still replays, with HAF's deferred core indexes missing. Block processing needs none of them: `reptracker_block_range_data()` reads `operations_view` by block range (`hive_operations_block_num_id_idx`, kept) and `accounts_view` by name (`uq_hive_accounst_name`, kept once haf#381 lands), and nothing else from hafd. The stage comes from `app_next_iteration`, which measures the distance to `hive.get_estimated_hive_head_block()` (the chain head from the clock), so the context stays in MASSIVE_PROCESSING while hived replays old blocks. Near the end of HAF's massive sync it can still reach the LIVE stage before HAF restores its indexes, so the LIVE path calls `finish_initial_sync()` and `create_rep_indexes()` only once `hive.is_instance_ready()` holds: the freeze vacuums and the non-concurrent `CREATE INDEX` on `hafd.operations` (which blocks hived's inserts) wait for HAF. A 10,000-block massive transaction reads `hafd.accounts` for about 5 s on average (14 h over the mainnet chain), so it holds up HAF's constraint re-attach for seconds, not minutes.
+
 ### Initial-sync marker
 
-`reptracker_app_status.is_initial_sync_finished` (read by `is_initial_sync_finished()`) persists across restarts. The first LIVE iteration calls `finish_initial_sync()`, which sets it and requests one `VACUUM (FREEZE, ANALYZE)` (HAF request kind `'freeze'`, haf#360) of `permlinks`, `account_reputations` and `active_votes`. On a HAF whose `hive.app_request_table_vacuum()` has no `_kind` argument, the requests are skipped with a NOTICE. Reptracker never drops its indexes, so HAF's own post-`app_restore_indexes()` freeze does not cover it.
+`reptracker_app_status.is_initial_sync_finished` (read by `is_initial_sync_finished()`) persists across restarts. The first LIVE iteration once `hive.is_instance_ready()` holds calls `finish_initial_sync()`, which sets it and requests one `VACUUM (FREEZE, ANALYZE)` (HAF request kind `'freeze'`, haf#360) of `permlinks`, `account_reputations` and `active_votes`. On a HAF whose `hive.app_request_table_vacuum()` has no `_kind` argument, the requests are skipped with a NOTICE. Reptracker never drops its indexes, so HAF's own post-`app_restore_indexes()` freeze does not cover it.
 
 ### LIVE (Real-time Sync)
 
@@ -201,7 +205,7 @@ This produces scores roughly in range 25-75 for typical accounts.
 | `reptracker_process_blocks()` | `db/reptracker_app.sql` | Dispatch to massive/single processing |
 | `reptracker_massive_processing()` | `db/reptracker_app.sql` | Bulk sync mode |
 | `reptracker_single_processing()` | `db/reptracker_app.sql` | Live sync mode |
-| `is_initial_sync_finished()` | `db/reptracker_app.sql` | Whether the first LIVE iteration has happened |
+| `is_initial_sync_finished()` | `db/reptracker_app.sql` | Whether the first LIVE iteration on a ready HAF has happened |
 | `finish_initial_sync()` | `db/reptracker_app.sql` | Set the marker, request post-sync freeze vacuums |
 | `continueProcessing()` | `db/reptracker_app.sql` | Check stop flag |
 | `allowProcessing()` | `db/reptracker_app.sql` | Enable processing |

@@ -2,7 +2,7 @@
 
 ## Overview
 
-Reptracker has four test suites validating different aspects:
+Reptracker has five test suites validating different aspects:
 
 | Suite | Purpose | Framework | Location |
 |-------|---------|-----------|----------|
@@ -10,6 +10,7 @@ Reptracker has four test suites validating different aspects:
 | **Performance** | Load testing & benchmarks | JMeter | `tests/performance/` |
 | **Regression** | Compare against hived reference data | SQL + Python | `tests/regression/` |
 | **Functional** | Shell script validation | Bash | `tests/functional/` |
+| **Early block processing** | Processing while hived replays (keep-monotonic) | SQL | `tests/early_block_processing/` |
 
 ## Test Categories
 
@@ -95,6 +96,17 @@ Validates shell scripts work correctly.
 2. `install_app.sh` - Schema installation
 3. `uninstall_app.sh` - Schema removal
 
+### Early Block Processing Test (`tests/early_block_processing/`)
+
+Simulates in SQL what hived does during a massive sync, on a HAF database that holds no blocks (HAF with `hive.app_context_set_early_block_processing`, haf#379), after a fresh `install_app.sh`:
+
+1. The context is opted in to early block processing at install.
+2. `drop-all` policy: a dump of 250 blocks is not delivered before the index restore.
+3. `keep-monotonic` policy (`hive.disable_indexes_of_irreversible('keep-monotonic')`, sync state `REINDEX`): reptracker processes the dump in `MASSIVE_PROCESSING`, then catches up with hived and processes 5 more blocks in the LIVE stage; its `process_blocks` transactions scan none of `hafd.transactions`, `hafd.transactions_multisig`, `hafd.account_operations` (all of their indexes are deferred), the reputations of the 3 synthetic votes are right, and the initial sync is **not** finished (no freeze requests, no partial index on `hafd.operations`).
+4. HAF restores its indexes: the next LIVE block finishes the initial sync (3 freeze requests, partial index created).
+
+**Files:** `run_test.sh` (installs, then runs the SQL), `early_block_processing.sql`. The database is left modified: use a throwaway one. Requires a superuser (`haf_admin`).
+
 ## Running Tests Locally
 
 ### Prerequisites
@@ -157,6 +169,14 @@ cd tests/functional
 ./test_scripts.sh --host=localhost
 ```
 
+### Early Block Processing Test
+
+```bash
+# a HAF container without hived and without blocks
+docker run -d --name haf-early -e PG_ACCESS='host haf_block_log haf_admin all trust\n' -p 5432:5432 registry.gitlab.syncad.com/hive/haf:<commit> --skip-hived
+tests/early_block_processing/run_test.sh --host=localhost
+```
+
 ## CI Pipeline Jobs
 
 | Job | Stage | Test Suite | Description |
@@ -165,6 +185,7 @@ cd tests/functional
 | `performance-test` | test | Performance | Load testing with JMeter |
 | `regression-test` | test | Regression | Compare against hived data |
 | `setup-scripts-test` | test | Functional | Validate install/uninstall scripts |
+| `early-block-processing-test` | test | Early block processing | Processing while hived replays, on an empty HAF service (`--skip-hived`) |
 | `python_api_client_test` | test | Python | Generated API client tests |
 
 ### CI Test Environment

@@ -182,7 +182,7 @@ find_haf_image:
   extends: .find_haf_image
   stage: detect
   variables:
-    UPSTREAM_BRANCH: "1.28.8-rc3"
+    UPSTREAM_BRANCH: "develop"
     HAF_PATTERNS_REF: "develop"
 
 # =============================================================================
@@ -669,6 +669,30 @@ setup-scripts-test:
     paths:
     - docker/container-logs.tar.gz
     when: always
+
+# Block processing while hived replays with psql-massive-index-policy=keep-monotonic,
+# simulated in SQL on an empty HAF database (no hived, no replay data needed).
+early-block-processing-test:
+  stage: test
+  image: ${HAF_APP_TEST_RUNNER_IMAGE}
+  needs:
+  - job: find_haf_image
+    artifacts: true
+  services:
+  - name: ${HAF_IMAGE_NAME}
+    alias: haf
+    command: ["--skip-hived"]
+    variables:
+      PG_ACCESS: "host haf_block_log haf_admin all trust\n"
+  timeout: 30 minutes
+  script:
+  - |
+    until psql "postgresql://haf_admin@haf:5432/haf_block_log" -Atc "SELECT 1" >/dev/null 2>&1; do
+      echo "Waiting for HAF..."; sleep 5
+    done
+    ./tests/early_block_processing/run_test.sh --host=haf
+  tags:
+  - public-runner-docker
 
 performance-test:
   extends: .test-with-docker-compose
