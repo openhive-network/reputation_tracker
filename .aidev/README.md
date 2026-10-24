@@ -88,7 +88,9 @@ To run the stack checks by hand against the shared HAF (`aidev session status
 haf-shared` shows its endpoint):
 
 ```bash
-image="$(grep -o 'registry[^"]*aidev-tests@sha256:[0-9a-f]*' .aidev/project.yaml)"
+base="$(grep -o 'registry[^"]*haf-app-test-runner:[a-z0-9.]*' .aidev/project.yaml)"
+docker build --build-arg BASE_IMAGE="$base" -f .aidev/runtime/Dockerfile -t reptracker-checks "$(mktemp -d)"
+image=reptracker-checks
 docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/w" -w /w \
     -e AIDEV_EXTERNAL_HAF_HOST=<host> -e AIDEV_EXTERNAL_HAF_PORT=<port> "$image" \
     .aidev/run-checks.sh full shellcheck sql-registered install sync regression tavern reinstall uninstall
@@ -96,33 +98,20 @@ docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/w" -w /w \
 
 ## The test runtime image (`runtime/`)
 
-The checks run in a container with your uid: `python:3.14-alpine` (hive/tests_api needs
-Python >= 3.14), the `postgrest` binary of `postgrest:v12.0.2`, `bash`, `psql` and
-`shellcheck` from Alpine's repository, pinned `tavern`, `pytest`, `pytest-xdist`,
-`psycopg2-binary` and hive/tests_api (`validate_response`, the tavern tests'
-comparator) at `TESTS_API_COMMIT`, and `haf_app_driver.py` from
-hive/common-ci-configuration at `DRIVER_COMMIT` (checksum-pinned); all bases pinned by
-digest, nothing installed at run time.
+The checks run in a container with your uid, built from `runtime/Dockerfile` on the
+image `environment.base` follows: hive/common-ci-configuration's
+`haf-app-test-runner:develop`, the image CI's tavern jobs run in (the
+`haf_app_testing` template's default). It provides Python, `bash`, `psql`,
+`shellcheck`, `postgrest`, `tavern`, `pytest`, `pytest-xdist` and `psycopg2`
+at the versions common-ci-configuration's `docker-bake.hcl` defines; the Dockerfile pins
+no tool version and adds only hive/tests_api (`validate_response`, the tavern tests'
+comparator) at `TESTS_API_COMMIT` and `haf_app_driver.py` from
+hive/common-ci-configuration at `DRIVER_COMMIT` (checksum-pinned). Nothing is installed
+at run time.
 
-`runtime/Dockerfile` is byte-identical to hive/balance_tracker's
-`.aidev/runtime/Dockerfile`, so both have the same input-hash tag, and
-`environment.image` is currently pinned to that project's published build of it
-(`registry.gitlab.syncad.com/hive/balance_tracker/aidev-tests@sha256:6304cb72…`).
-To move the image to this project's registry, someone with push access runs
-`.aidev/runtime/build.sh --push` and puts the printed
-`registry.gitlab.syncad.com/hive/reputation_tracker/aidev-tests@sha256:<digest>` into
-`environment.image`.
-
-When `runtime/Dockerfile` changes (e.g. tests_api or the driver moves), rebuild and
-re-pin **in the same commit**:
-
-```bash
-.aidev/runtime/build.sh --push   # registry digest if aidev-<input hash> exists, else build + push
-# put the printed repo@sha256:<digest> into project.yaml environment.image
-```
-
-To build through a pull-through registry cache near the build host, set
-`AIDEV_IMAGE_CACHE_BY_REGION` to `region=host:port` pairs, e.g.
-`eu=cache.example.org:5001,*=cache2.example.org:5001`: a pair applies when its region is
-a label of the host's FQDN, and `*` applies to any other host. Unset, the image is built
-straight from `registry.gitlab.syncad.com`.
+AIDEV resolves the followed tag before every run and rebuilds the runtime when that tag
+or the Dockerfile moves, so a tool upgrade in common-ci-configuration reaches these
+checks with no commit here; a change only needs a commit when something breaks.
+`environment.image` is the seed pin AIDEV's consumers read before a slot is resolved
+(the base's digest at adoption); it is not the image the checks run in and does not
+have to move. See AIDEV's `docs/operations/project-test-runtimes.md`, *A followed base*.
