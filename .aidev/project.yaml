@@ -26,11 +26,15 @@ branches:
 # How this project's suites execute (#13892): one kind, stated once.
 environment:
   kind: "container"
-  # .aidev/runtime/Dockerfile (its only input) is byte-identical to
-  # hive/balance_tracker's, and the pin is that project's build of it until
-  # .aidev/runtime/build.sh --push publishes it here; see .aidev/README.md.
-  image: "registry.gitlab.syncad.com/hive/balance_tracker/aidev-tests@sha256:6304cb72c3c60d54129cf86c83a0f60171473c6735848da3236c79fc93a5c35b"
+  # The suites run in .aidev/runtime/Dockerfile built on common-ci-configuration's
+  # haf-app-test-runner, the image CI's tavern jobs run in; AIDEV rebuilds it when
+  # the followed tag moves, so tool versions come from that image. `image` is the
+  # seed pin consumers read before a slot is resolved: the base's digest at
+  # adoption. See .aidev/README.md.
+  image: "registry.gitlab.syncad.com/hive/common-ci-configuration/haf-app-test-runner@sha256:a24c816d6defc38d58bd38246dc1afa4530b416e7fe8dd77b3cdf7c645eb0e7c"
   inputs: [".aidev/runtime/Dockerfile"]
+  build: {dockerfile: ".aidev/runtime/Dockerfile", context: "."}
+  base: {image: "registry.gitlab.syncad.com/hive/common-ci-configuration/haf-app-test-runner:develop", follow: true}
 
 issues:
   intake_label: todo
