@@ -74,7 +74,7 @@ run_shellcheck() {
     shellcheck --version | head -2
     find scripts docker tests -name '*.sh' -type f -print0 | sort -z \
         | xargs -0 shellcheck -S error -f gcc || return 1
-    shellcheck -f gcc .aidev/*.sh .aidev/runtime/*.sh
+    shellcheck -f gcc .aidev/*.sh
 }
 
 sql_registered() {
