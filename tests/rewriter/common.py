@@ -50,5 +50,5 @@ def direct_get(function: str, query: str):
 
 
 def postgrest_code(ans):
-    status, body = ans
+    _status, body = ans
     return body.get("code") if isinstance(body, dict) else None

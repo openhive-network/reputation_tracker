@@ -24,26 +24,48 @@ def test_no_endpoint_argument_has_a_reserved_name():
     reserved_last = {"limit", "offset", "order", "and", "or"}
     signature = re.compile(r"CREATE OR REPLACE FUNCTION reptracker_endpoints\.(\w+)\s*\((.*?)\)\s*RETURNS",
                            re.S | re.I)
-    seen, bad = 0, []
+    seen, bad = set(), []
     for sql in ENDPOINTS.rglob("*.sql"):
         for fn, params in signature.findall(sql.read_text(encoding="utf-8")):
-            seen += 1
+            seen.add(fn)
             for name in re.findall(r'"([^"]+)"', re.sub(r"--[^\n]*", "", params)):
                 if name in reserved or name.rsplit(".", 1)[-1] in reserved_last:
                     bad.append(f"{fn}({name})")
-    assert seen >= 4, f"found only {seen} endpoint signatures under {ENDPOINTS}"
+    assert {"get_account_reputation", "get_rep_last_synced_block", "get_rep_sync_status",
+            "get_reptracker_version", "root"} <= seen, seen
     assert not bad, bad
 
 
-@pytest.mark.parametrize("query", [{"limit": "1"}, {"offset": "0", "limit": "1"}, {"select": "*"}],
-                         ids=lambda q: "&".join(q))
-@pytest.mark.parametrize("route", ["/accounts/blocktrades/reputation", "/get_account_reputation"])
-def test_reserved_parameter_stays_in_the_url(route, query):
+ROUTES = ["/accounts/blocktrades/reputation", "/get_account_reputation"]
+
+
+def _via_rewriter(route, query):
     # The path route carries account-name in the path, the catch-all in the query string.
-    params = query if route.startswith("/accounts/") else {**ARGS, **query}
-    got = via_rewriter(route, params)
+    return via_rewriter(route, query if route.startswith("/accounts/") else {**ARGS, **query})
+
+
+# get_account_reputation returns one INT, on which these change nothing: they only show
+# that the names are not taken as arguments (in the body they would be: PGRST202).
+@pytest.mark.parametrize("query", [{"limit": "1"}, {"offset": "0", "limit": "1"}, {"select": "*"},
+                                   {"order": "get_account_reputation.desc"}, {"x.limit": "1"}],
+                         ids=lambda q: "&".join(q))
+@pytest.mark.parametrize("route", ROUTES)
+def test_reserved_parameter_is_not_an_argument(route, query):
+    got = _via_rewriter(route, query)
     want = direct_post("get_account_reputation", ARGS, query=query)
     assert postgrest_code(got) != "PGRST202", got
+    assert got == want
+
+
+# A malformed value makes PostgREST reject the parameter itself, so the answer shows it
+# reached PostgREST as its own parameter: dropped, the call would succeed (200); in the
+# body, it would be an unknown argument (PGRST202).
+@pytest.mark.parametrize("query", [{"limit": "abc"}, {"offset": "abc"}], ids=lambda q: "&".join(q))
+@pytest.mark.parametrize("route", ROUTES)
+def test_reserved_parameter_keeps_its_meaning(route, query):
+    got = _via_rewriter(route, query)
+    want = direct_post("get_account_reputation", ARGS, query=query)
+    assert want[0] != 200 and postgrest_code(want) != "PGRST202", want
     assert got == want
 
 

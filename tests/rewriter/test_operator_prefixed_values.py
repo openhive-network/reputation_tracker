@@ -46,6 +46,17 @@ def test_value_arrives_unchanged(route, value):
     assert body.get("message") == f"Account '{value}' does not exist", (status, body)
 
 
+def test_encoded_characters_arrive_unchanged():
+    """`+`, `%`, `&`, `=` and a space in a value are each encoded once by the client; the
+    rewriter must forward the encoded part as is, neither decoding it nor encoding it again.
+    Catch-all route only: a path segment is decoded by nginx before the rewrite rule copies
+    it into the arguments, which this change leaves as it was."""
+    value = "eq.a+b%2Bc&d=e f"
+    status, body = via_rewriter(CATCH_ALL_ROUTE, {"account-name": value})
+    assert isinstance(body, dict), (status, body)
+    assert body.get("message") == f"Account '{value}' does not exist", (status, body)
+
+
 @pytest.mark.parametrize("route", [PATH_ROUTE, CATCH_ALL_ROUTE])
 def test_ordinary_account_unchanged(route):
     got = _get(route, "blocktrades")
