@@ -59,9 +59,11 @@ def test_reserved_parameter_is_not_an_argument(route, query):
 
 # A value PostgREST cannot parse makes it reject the parameter itself, so the answer shows
 # it reached PostgREST as its own parameter: dropped, the call would succeed (200); in the
-# body, it would be an unknown argument (PGRST202). (A malformed limit or offset would not
-# do: PostgREST ignores those, answering 200.)
-@pytest.mark.parametrize("query", [{"or": "garbage"}, {"and": "garbage"}, {"select": "a,("}],
+# body, it would be an unknown argument (PGRST202). (A non-numeric limit or offset would not
+# do: PostgREST ignores those, answering 200; a negative limit is rejected, 416, and an
+# offset for an embedding the call does not have, PGRST108.)
+@pytest.mark.parametrize("query", [{"or": "garbage"}, {"and": "garbage"}, {"select": "a,("},
+                                   {"limit": "-1"}, {"x.offset": "0"}],
                          ids=lambda q: "&".join(q))
 @pytest.mark.parametrize("route", ROUTES)
 def test_reserved_parameter_keeps_its_meaning(route, query):
