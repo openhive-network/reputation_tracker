@@ -2,11 +2,12 @@
 
 ## Overview
 
-Reptracker has five test suites validating different aspects:
+Reptracker has six test suites validating different aspects:
 
 | Suite | Purpose | Framework | Location |
 |-------|---------|-----------|----------|
 | **Tavern API** | REST endpoint validation | pytest + Tavern | `tests/tavern/` |
+| **Rewriter** | Public REST paths through the postgrest-rewriter | pytest | `tests/rewriter/` |
 | **Performance** | Load testing & benchmarks | JMeter | `tests/performance/` |
 | **Regression** | Compare against hived reference data | SQL + Python | `tests/regression/` |
 | **Functional** | Shell script validation | Bash | `tests/functional/` |
@@ -46,6 +47,22 @@ tests/tavern/
 **Environment variables:**
 - `REPTRACKER_ADDRESS` - API server host (default: localhost)
 - `REPTRACKER_PORT` - API server port (default: 3000)
+
+### Rewriter Tests (`tests/rewriter/`)
+
+Plain pytest (no Tavern) for the public REST paths through the postgrest-rewriter image,
+which the other suites bypass by calling PostgREST directly. Each GET through the rewriter
+must answer exactly as a direct JSON POST of the same arguments (the oracle):
+
+- `test_operator_prefixed_values.py` - account names starting with a PostgREST operator
+  prefix (`not.`, `eq.`, `in.`, ...) reach `get_account_reputation` verbatim, on the path
+  route and the catch-all route (#18).
+- `test_reserved_parameters.py` - PostgREST's own parameters (`limit`, `offset`, `select`)
+  stay in the URL, and no endpoint argument has a reserved name.
+
+The `rewriter` service in `docker/docker-compose-test.yml` (profile `rewriter`, port
+`REWRITER_PORT`, default 3080) runs the image; `REPTRACKER_ADDRESS`/`REPTRACKER_PORT` still
+point at PostgREST.
 
 ### Performance Tests (`tests/performance/`)
 
@@ -182,6 +199,7 @@ tests/early_block_processing/run_test.sh --host=localhost
 | Job | Stage | Test Suite | Description |
 |-----|-------|------------|-------------|
 | `pattern-test` | test | Tavern | API endpoint validation |
+| `rewriter-test` | test | Rewriter | Public REST paths through this pipeline's postgrest-rewriter image |
 | `performance-test` | test | Performance | Load testing with JMeter |
 | `regression-test` | test | Regression | Compare against hived data |
 | `setup-scripts-test` | test | Functional | Validate install/uninstall scripts |

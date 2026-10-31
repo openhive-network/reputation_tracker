@@ -10,3 +10,4 @@ process_openapi.py
 # AIDEV check reports (.aidev/run-checks.sh)
 /test-results/
 /.aidev/__pycache__/
+__pycache__/
