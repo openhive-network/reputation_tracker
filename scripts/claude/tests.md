@@ -187,6 +187,9 @@ tests/early_block_processing/run_test.sh --host=localhost
 | `setup-scripts-test` | test | Functional | Validate install/uninstall scripts |
 | `early-block-processing-test` | test | Early block processing | Processing while hived replays, on an empty HAF service (`--skip-hived`) |
 | `python_api_client_test` | test | Python | Generated API client tests |
+| `test_python_api_wheel` | test | Python | Built wheel imports and carries a real version |
+
+The two Python jobs run in `${PYTHON_TEST_TOOLS_IMAGE}` and use its pytest and pytest-asyncio (versions set in common-ci-configuration's `docker-bake.hcl`); `scripts/python_api_package` pins neither, only its runtime dependencies, which poetry installs into the image's tools venv.
 
 ### CI Test Environment
 

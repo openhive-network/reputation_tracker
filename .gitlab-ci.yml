@@ -572,46 +572,45 @@ sync:
   - data-cache-storage
   - fast
 
-python_api_client_test:
-  extends: .project_develop_configuration_template
+# pytest and pytest-asyncio come from python-test-tools, at the versions in
+# common-ci-configuration's docker-bake.hcl. The image activates its tools venv
+# (VIRTUAL_ENV=/python_venv), so poetry installs the package's dependencies
+# next to the tools and the image's pytest sees them.
+.python_api_test_template:
+  extends: .job-defaults
   stage: test
-  needs:
-  - job: generate_python_api_client
-    artifacts: true
+  image: "${PYTHON_TEST_TOOLS_IMAGE}"
   variables:
     PYPROJECT_DIR: "${CI_PROJECT_DIR}/scripts/python_api_package"
-  parallel:
-    matrix:
-    - PYTHON_VERSION: ["3.14"]
-  before_script:
-  - !reference [.project_develop_configuration_template, before_script]
-  - !reference [.update_deps_for_tests, script]
-  script:
-  - poetry run -C "${PYPROJECT_DIR}" pytest "${PYPROJECT_DIR}/tests/test_generated_api_client.py"
   tags:
   - public-runner-docker
 
+python_api_client_test:
+  extends: .python_api_test_template
+  needs:
+  - job: generate_python_api_client
+    artifacts: true
+  before_script:
+  - poetry -C "${PYPROJECT_DIR}" install
+  - !reference [.update_deps_for_tests, script]
+  - pip list
+  script:
+  - pytest "${PYPROJECT_DIR}/tests/test_generated_api_client.py"
+
 test_python_api_wheel:
-  extends: .project_develop_configuration_template
-  stage: test
+  extends: .python_api_test_template
   needs:
   - job: build_python_api_client_wheel
     artifacts: true
   variables:
-    PYPROJECT_DIR: "${CI_PROJECT_DIR}/scripts/python_api_package"
     DIST_DIR: "${CI_PROJECT_DIR}/scripts/python_api_package/dist"
-  parallel:
-    matrix:
-    - PYTHON_VERSION: ["3.14"]
   before_script:
-  - !reference [.configuration_template, before_script]
-  - !reference [.update_deps_for_tests, script]
   - poetry -C "${PYPROJECT_DIR}" install --no-root
+  - !reference [.update_deps_for_tests, script]
+  - pip list
   script:
   - pip install --no-deps "${DIST_DIR}"/*.whl
   - pytest "${PYPROJECT_DIR}/tests/test_package_import.py" -v
-  tags:
-  - public-runner-docker
 
 regression-test:
   extends: .test-with-docker-compose
