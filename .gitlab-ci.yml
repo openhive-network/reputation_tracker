@@ -581,28 +581,34 @@ python_api_client_test:
   - pip install --index-url "${PYTHON_API_INDEX_URL}" ${PYTHON_API_PIP_EXTRA_ARGS} "${PYTHON_API_DIST_DIR}"/*.whl
   - |
     python3 - <<'EOF'
+    import asyncio
     import sys
 
-    from hiveio_api_client import HttpUrl, RemoteHandleSettings, SyncRemoteHandle
+    from hiveio_api_client import AsyncRemoteHandle, HttpUrl, RemoteHandleSettings
     from hiveio_api_client.exceptions import CommunicationError, HttpStatusError
     from hiveio_reputation_api.reputation_api_client.reputation_api_client import ReputationApi
 
     ENDPOINTS = ["https://api.syncad.com", "https://api.hive.blog"]
     ACCOUNT = "gtg"
 
-    for endpoint in ENDPOINTS:
-        handle = SyncRemoteHandle(RemoteHandleSettings(http_endpoint=HttpUrl(endpoint), max_retries=1), api=ReputationApi)
-        try:
-            reputation = handle.api.accounts_reputation(ACCOUNT)
-        except (CommunicationError, HttpStatusError) as error:
-            print(f"{endpoint} unavailable: {error}")
-            continue
-        if not isinstance(reputation, int):
-            sys.exit(f"{endpoint}: expected an int reputation of {ACCOUNT}, got {reputation!r}")
-        print(f"{endpoint}: reputation of {ACCOUNT} is {reputation}")
-        break
-    else:
+
+    # The template generates the client on AbstractAsyncApi: its endpoints are coroutines sent by an async handle.
+    async def main() -> None:
+        for endpoint in ENDPOINTS:
+            handle = AsyncRemoteHandle(RemoteHandleSettings(http_endpoint=HttpUrl(endpoint), max_retries=1), api=ReputationApi)
+            try:
+                reputation = await handle.api.accounts_reputation(ACCOUNT)
+            except (CommunicationError, HttpStatusError) as error:
+                print(f"{endpoint} unavailable: {error}")
+                continue
+            if not isinstance(reputation, int):
+                sys.exit(f"{endpoint}: expected an int reputation of {ACCOUNT}, got {reputation!r}")
+            print(f"{endpoint}: reputation of {ACCOUNT} is {reputation}")
+            return
         sys.exit(f"No endpoint of {ENDPOINTS} answered")
+
+
+    asyncio.run(main())
     EOF
   tags:
   - public-runner-docker
