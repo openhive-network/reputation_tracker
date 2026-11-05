@@ -204,10 +204,10 @@ tests/early_block_processing/run_test.sh --host=localhost
 | `regression-test` | test | Regression | Compare against hived data |
 | `setup-scripts-test` | test | Functional | Validate install/uninstall scripts |
 | `early-block-processing-test` | test | Early block processing | Processing while hived replays, on an empty HAF service (`--skip-hived`) |
-| `python_api_client_test` | test | Python | Generated API client tests |
-| `test_python_api_wheel` | test | Python | Built wheel imports and carries a real version |
+| `python_api_client_test` | test | Python | Installed wheel calls `accounts_reputation` on a public endpoint |
+| `test_python_api_wheel` | test | Python | Built wheel imports, carries a real version and pulls no wallet or hived API package |
 
-The two Python jobs run in `${PYTHON_TEST_TOOLS_IMAGE}` and use its pytest and pytest-asyncio (versions set in common-ci-configuration's `docker-bake.hcl`); `scripts/python_api_package` pins neither, only its runtime dependencies, which poetry installs into the image's tools venv.
+The Python client `hiveio-reputation-api` (import `hiveio_reputation_api`, client in `hiveio_reputation_api.reputation_api_client`) has no project in this repo: hive/wax-spec-generator's `templates/python_api_package.gitlab-ci.yml` generates it from the `extract-swagger-json` artifact, builds, tests and publishes it, and pins the generator and the runtime package `hiveio_api_client`. The `PYTHON_API_*` variables in `.gitlab-ci.yml` configure it.
 
 ### CI Test Environment
 

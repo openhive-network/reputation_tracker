@@ -70,8 +70,11 @@ variables:
   # Cache manager configuration (from common-ci-configuration)
   CACHE_MANAGER: "/tmp/cache-manager.sh"
   CACHE_MANAGER_REF: "develop"
-  # Set to "true" to run poetry update before install (uses latest dependency versions)
-  TEST_WITH_LATEST_DEPENDENCIES: "false"
+  # Python API client package (hive/wax-spec-generator's python_api_package template)
+  PYTHON_API_SWAGGER_JSON: "${CI_PROJECT_DIR}/build/swagger-doc.json"
+  PYTHON_API_DISTRIBUTION_NAME: "hiveio-reputation-api"
+  PYTHON_API_PACKAGE_NAME: "hiveio_reputation_api"
+  PYTHON_API_NAMESPACE: "reputation_api_client"
 
 # AIDEV branches (ai/*, session/*) and pushes to aidev/integration run no
 # pipeline: AIDEV verifies them through .aidev/project.yaml. A pipeline started
@@ -102,6 +105,9 @@ include:
   - '/templates/test_jobs.gitlab-ci.yml'
   - '/templates/haf_app_testing.gitlab-ci.yml'
   - '/templates/source_change_detection.gitlab-ci.yml'
+- project: 'hive/wax-spec-generator'
+  ref: main
+  file: '/templates/python_api_package.gitlab-ci.yml'
 
 default:
   hooks:
@@ -198,22 +204,6 @@ lint_sql_scripts:
   extends: .haf_app_lint_sql
   stage: lint
 
-verify_poetry_lock_stability_api_package:
-  stage: lint
-  extends: .verify_poetry_lock_stability_template
-  variables:
-    PYPROJECT_DIR: "${CI_PROJECT_DIR}/scripts/python_api_package"
-  tags:
-  - public-runner-docker
-
-verify_poetry_lock_stability_api_generation:
-  stage: lint
-  extends: .verify_poetry_lock_stability_template
-  variables:
-    PYPROJECT_DIR: "${CI_PROJECT_DIR}/scripts/api_generation"
-  tags:
-  - public-runner-docker
-
 # Note: HAF image is now dynamically detected by find_haf_image job.
 # Jobs use HAF_UPSTREAM_* variables directly (mapped to HAF_* where needed).
 
@@ -226,29 +216,20 @@ extract-swagger-json:
   - public-runner-docker
 
 generate_python_api_client:
-  extends: .project_develop_configuration_template
+  extends: .python_api_package_generate
   stage: build
-  variables:
-    PYPROJECT_DIR: "${CI_PROJECT_DIR}/scripts/api_generation"
   needs:
   - job: extract-swagger-json
     artifacts: true
-  script:
-  - ${PYPROJECT_DIR}/generate_reputation_api_client.sh
-  artifacts:
-    paths:
-    - "${CI_PROJECT_DIR}/scripts/python_api_package/hiveio_reputation_api"
   tags:
   - public-runner-docker
 
 build_python_api_client_wheel:
-  extends: .build_wheel_template
+  extends: .python_api_package_build
   stage: build
   needs:
   - job: generate_python_api_client
     artifacts: true
-  variables:
-    PYPROJECT_DIR: "${CI_PROJECT_DIR}/scripts/python_api_package"
   tags:
   - public-runner-docker
 
@@ -579,45 +560,52 @@ sync:
   - data-cache-storage
   - fast
 
-# pytest and pytest-asyncio come from python-test-tools, at the versions in
-# common-ci-configuration's docker-bake.hcl. The image activates its tools venv
-# (VIRTUAL_ENV=/python_venv), so poetry installs the package's dependencies
-# next to the tools and the image's pytest sees them.
-.python_api_test_template:
-  extends: .job-defaults
-  stage: test
-  image: "${PYTHON_TEST_TOOLS_IMAGE}"
-  variables:
-    PYPROJECT_DIR: "${CI_PROJECT_DIR}/scripts/python_api_package"
-  tags:
-  - public-runner-docker
-
-python_api_client_test:
-  extends: .python_api_test_template
-  needs:
-  - job: generate_python_api_client
-    artifacts: true
-  before_script:
-  - poetry -C "${PYPROJECT_DIR}" install
-  - !reference [.update_deps_for_tests, script]
-  - pip list
-  script:
-  - pytest "${PYPROJECT_DIR}/tests/test_generated_api_client.py"
-
 test_python_api_wheel:
-  extends: .python_api_test_template
+  extends: .python_api_package_test
+  stage: test
   needs:
   - job: build_python_api_client_wheel
     artifacts: true
-  variables:
-    DIST_DIR: "${CI_PROJECT_DIR}/scripts/python_api_package/dist"
-  before_script:
-  - poetry -C "${PYPROJECT_DIR}" install --no-root
-  - !reference [.update_deps_for_tests, script]
-  - pip list
+  tags:
+  - public-runner-docker
+
+# One call of the installed wheel through the transport of its runtime package
+# (hiveio_api_client), against the first public endpoint that answers.
+python_api_client_test:
+  extends: .python_api_package_base
+  stage: test
+  needs:
+  - job: build_python_api_client_wheel
+    artifacts: true
   script:
-  - pip install --no-deps "${DIST_DIR}"/*.whl
-  - pytest "${PYPROJECT_DIR}/tests/test_package_import.py" -v
+  - pip install --index-url "${PYTHON_API_INDEX_URL}" ${PYTHON_API_PIP_EXTRA_ARGS} "${PYTHON_API_DIST_DIR}"/*.whl
+  - |
+    python3 - <<'EOF'
+    import sys
+
+    from hiveio_api_client import HttpUrl, RemoteHandleSettings, SyncRemoteHandle
+    from hiveio_api_client.exceptions import CommunicationError, HttpStatusError
+    from hiveio_reputation_api.reputation_api_client.reputation_api_client import ReputationApi
+
+    ENDPOINTS = ["https://api.syncad.com", "https://api.hive.blog"]
+    ACCOUNT = "gtg"
+
+    for endpoint in ENDPOINTS:
+        handle = SyncRemoteHandle(RemoteHandleSettings(http_endpoint=HttpUrl(endpoint), max_retries=1), api=ReputationApi)
+        try:
+            reputation = handle.api.accounts_reputation(ACCOUNT)
+        except (CommunicationError, HttpStatusError) as error:
+            print(f"{endpoint} unavailable: {error}")
+            continue
+        if not isinstance(reputation, int):
+            sys.exit(f"{endpoint}: expected an int reputation of {ACCOUNT}, got {reputation!r}")
+        print(f"{endpoint}: reputation of {ACCOUNT} is {reputation}")
+        break
+    else:
+        sys.exit(f"No endpoint of {ENDPOINTS} answered")
+    EOF
+  tags:
+  - public-runner-docker
 
 regression-test:
   extends: .test-with-docker-compose
@@ -799,18 +787,13 @@ rewriter-test:
     when: always
 
 deploy_python_api_packages_to_gitlab:
+  extends: .python_api_package_publish
   stage: publish
   needs:
   - job: build_python_api_client_wheel
     artifacts: true
-  - job: generate_python_api_client
-    artifacts: true
-  - job: python_api_client_test
   - job: test_python_api_wheel
-  extends: .deploy_wheel_to_gitlab_template
-  variables:
-    PYPROJECT_DIR: "${CI_PROJECT_DIR}/scripts/python_api_package"
-  when: on_success
+  - job: python_api_client_test
   tags:
   - public-runner-docker
 
