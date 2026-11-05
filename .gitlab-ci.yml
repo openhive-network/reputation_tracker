@@ -803,13 +803,13 @@ deploy_python_api_packages_to_gitlab:
   tags:
   - public-runner-docker
 
-build_and_publish_image:
-  stage: publish
-  extends: .publish_docker_image_template
-  before_script:
-  - !reference [.publish_docker_image_template, before_script]
-  script:
-  - scripts/ci-helpers/build_and_publish_instance.sh
+# Publish to registry.hive.blog - pull/retag/push only, no rebuild.
+# The images were built (and tagged with the release version) by
+# docker-setup-docker-image-build and are the ones the test stage ran against.
+publish_images:
+  extends: .docker_publish_job_template
+  variables:
+    PUBLISH_IMAGES: "reputation_tracker postgrest-rewriter"
   tags:
   - public-runner-docker
 
