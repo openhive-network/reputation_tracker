@@ -539,8 +539,14 @@ DECLARE
   _blocks_range hive.blocks_range := (0,0);
 BEGIN
   -- Block until any active reputation_tracker installer releases its
-  -- exclusive lock; held by this session until main() returns.
-  PERFORM hive.acquire_app_block_processor_locks(ARRAY['reputation_tracker']);
+  -- exclusive lock; held by this session until main() returns. A HAF older
+  -- than the lock helpers (before 1.28.8) has none: run without the lock, as
+  -- install_with_app_lock.py does on such a HAF (#12).
+  IF to_regprocedure('hive.acquire_app_block_processor_locks(text[])') IS NOT NULL THEN
+    PERFORM hive.acquire_app_block_processor_locks(ARRAY['reputation_tracker']);
+  ELSE
+    RAISE WARNING 'This HAF has no hive.acquire_app_block_processor_locks; processing blocks without the reputation_tracker application lock';
+  END IF;
 
   IF _maxBlockLimit IS NOT NULL THEN
     RAISE NOTICE 'Max block limit is specified as: %', _maxBlockLimit;
@@ -673,6 +679,15 @@ BEGIN
 
   -- Register with the HAF application registry so a generic driver can run
   -- this application and other applications can declare dependencies on it.
+  -- A HAF older than haf#341 has no registry: install anyway and leave the
+  -- block processing to the legacy main() loop. scripts/process_blocks.sh
+  -- checks the registry before it starts the driver, so the two agree (#12).
+  -- PL/pgSQL plans the query below only when it runs, so this check is enough.
+  IF to_regclass('hafd.applications') IS NULL THEN
+    RAISE WARNING 'This HAF has no application registry (older than haf#341); not registering %. Block processing will use the legacy main() loop', __schema_name;
+    RETURN;
+  END IF;
+
   -- An embedding application may re-register this context as part of its own
   -- context group afterwards. On a re-install under such an application the
   -- context already belongs to it, and registering would fail: leave the

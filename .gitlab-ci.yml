@@ -692,6 +692,30 @@ early-block-processing-test:
   tags:
   - public-runner-docker
 
+# Which loop scripts/process_blocks.sh starts in each state of the HAF application
+# registry (#12), on an empty HAF database, with the driver and the legacy loop stubbed.
+process-blocks-selection-test:
+  stage: test
+  image: ${HAF_APP_TEST_RUNNER_IMAGE}
+  needs:
+  - job: find_haf_image
+    artifacts: true
+  services:
+  - name: ${HAF_IMAGE_NAME}
+    alias: haf
+    command: ["--skip-hived"]
+    variables:
+      PG_ACCESS: "host haf_block_log all all trust\n"
+  timeout: 30 minutes
+  script:
+  - |
+    until psql "postgresql://haf_admin@haf:5432/haf_block_log" -Atc "SELECT 1" >/dev/null 2>&1; do
+      echo "Waiting for HAF..."; sleep 5
+    done
+    ./tests/process_blocks_selection/run_test.sh --host=haf
+  tags:
+  - public-runner-docker
+
 performance-test:
   extends: .test-with-docker-compose
   stage: test
