@@ -153,9 +153,9 @@ got="$(sql "SELECT name FROM hafd.applications WHERE contexts = ARRAY['reptracke
 if [ "$got" = "reputation_tracker" ]; then
   echo "PASS  registered under the lock name reputation_tracker"
 else
+  # Not renamed here to let the cases below go on: the haf#403 case must show what
+  # the install's own registration gets
   fail "registered under the lock name reputation_tracker: registered as '$got'"
-  # The cases below find the row by that name
-  sql "UPDATE hafd.applications SET name = 'reputation_tracker' WHERE contexts = ARRAY['reptracker_app']"
 fi
 
 expect "registered with its entry procedure" DRIVER
