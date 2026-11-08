@@ -59,9 +59,14 @@ OWNER_URL="postgresql://reptracker_owner@$POSTGRES_HOST:$POSTGRES_PORT/haf_block
 if [ ! -f "$script_dir/set_version_in_sql.pgsql" ]; then
   "$script_dir/generate_version_sql.sh" "$script_dir/.."
 fi
-"$script_dir/install_app.sh" --postgres-url="$ADMIN_URL"
-
 sql() { psql "$ADMIN_URL" -X -Atq -v ON_ERROR_STOP=on -c "$1"; }
+
+# Registry rows an earlier, interrupted run of this test may have left
+if [ "$(sql "SELECT to_regclass('hafd.applications') IS NOT NULL")" = "t" ]; then
+  sql "DELETE FROM hafd.applications WHERE name IN ('other_app', 'dep_target')
+         OR (name = 'reputation_tracker' AND NOT contexts @> ARRAY['reptracker_app'])"
+fi
+"$script_dir/install_app.sh" --postgres-url="$ADMIN_URL"
 
 # Undo whatever this test hid from HAF, whatever way it ends
 restore_haf() {
@@ -103,8 +108,8 @@ expect() {
   chosen="$(grep -oE 'STUB-(DRIVER|LEGACY)' <<<"$out" | head -1)" || true
   chosen="${chosen#STUB-}"
   # The driver must be told which app to run and which install lock to share
-  if [ "$chosen" = "DRIVER" ] && ! grep -q -- "--app=reptracker_app --postgres-url=.* --lock=reputation_tracker" <<<"$out"; then
-    chosen="DRIVER without --app=reptracker_app or --lock=reputation_tracker"
+  if [ "$chosen" = "DRIVER" ] && ! grep -q -- "--app=${APP_NAME:-reputation_tracker} --postgres-url=.* --lock=reputation_tracker" <<<"$out"; then
+    chosen="DRIVER without --app=${APP_NAME:-reputation_tracker} or --lock=reputation_tracker"
   fi
   # NONE: no loop started, and the service fails with an ERROR line
   if [ -z "$chosen" ] && [ "$status" -ne 0 ] && grep -q "^ERROR:" <<<"$out"; then
@@ -121,12 +126,15 @@ expect() {
 
 # run_main <case> <must-match pattern...>: the real legacy loop runs until stopped, so
 # a timeout (124) with no error, after it entered its loop, means it started
+call_main() {
+  # -s INT: psql cancels the CALL on the server before it exits
+  timeout -s INT 10 psql "$OWNER_URL" -X -v ON_ERROR_STOP=on \
+    -c "SET SEARCH_PATH TO reptracker_app;" -c "CALL reptracker_app.main('reptracker_app', NULL);" 2>&1
+}
 run_main() {
   local name="$1" out status=0 pattern
   shift
-  # -s INT: psql cancels the CALL on the server before it exits
-  out="$(timeout -s INT 10 psql "$OWNER_URL" -X -v ON_ERROR_STOP=on \
-         -c "SET SEARCH_PATH TO reptracker_app;" -c "CALL reptracker_app.main('reptracker_app', NULL);" 2>&1)" || status=$?
+  out="$(call_main)" || status=$?
   if [ "$status" -ne 124 ] || grep -v "canceling statement due to user request" <<<"$out" | grep -q "ERROR"; then
     fail "$name: exit $status" "$out"; return
   fi
@@ -138,8 +146,17 @@ run_main() {
 
 [ "$(sql "SELECT to_regclass('hafd.applications') IS NOT NULL")" = "t" ] \
   || { echo "This HAF has no application registry; the test needs one"; exit 1; }
-[ "$(sql "SELECT process_procedure FROM hafd.applications WHERE name = 'reptracker_app'")" = "reptracker_app.process_blocks" ] \
-  || { echo "install did not register reptracker_app with its entry procedure"; exit 1; }
+[ "$(sql "SELECT process_procedure FROM hafd.applications WHERE contexts = ARRAY['reptracker_app']")" = "reptracker_app.process_blocks" ] \
+  || { echo "install did not register reptracker_app's context with its entry procedure"; exit 1; }
+# Under its lock name (#23)
+got="$(sql "SELECT name FROM hafd.applications WHERE contexts = ARRAY['reptracker_app']")"
+if [ "$got" = "reputation_tracker" ]; then
+  echo "PASS  registered under the lock name reputation_tracker"
+else
+  fail "registered under the lock name reputation_tracker: registered as '$got'"
+  # The cases below find the row by that name
+  sql "UPDATE hafd.applications SET name = 'reputation_tracker' WHERE contexts = ARRAY['reptracker_app']"
+fi
 
 expect "registered with its entry procedure" DRIVER
 expect "--stop-at-block reaches the driver" DRIVER "--stop-at-block=5" -- --postgres-url="$OWNER_URL" --stop-at-block=5
@@ -147,19 +164,35 @@ EXTRA_PATH="$work_dir/flaky" expect "database down at the first attempt" DRIVER 
 EXTRA_PATH="$work_dir/failing" expect "registry query fails" NONE "ERROR: could not read the HAF application registry: ERROR:  permission denied"
 expect "database unreachable" NONE "ERROR: could not connect" -- --postgres-url="postgresql://reptracker_owner@$POSTGRES_HOST:1/haf_block_log"
 
-# The driver cannot run an app without its entry procedure; the legacy loop can
-sql "UPDATE hafd.applications SET process_procedure = NULL WHERE name = 'reptracker_app'"
+# The driver cannot run an app without its entry procedure
+sql "UPDATE hafd.applications SET process_procedure = NULL WHERE name = 'reputation_tracker'"
 expect "registered without an entry procedure" LEGACY "entry procedure"
-sql "UPDATE hafd.applications SET process_procedure = 'reptracker_app.process_blocks' WHERE name = 'reptracker_app'"
+sql "UPDATE hafd.applications SET process_procedure = 'reptracker_app.process_blocks' WHERE name = 'reputation_tracker'"
 sql "ALTER PROCEDURE reptracker_app.process_blocks(hive.blocks_range) RENAME TO process_blocks_hidden"
 expect "entry procedure gone" LEGACY "entry procedure"
-run_main "legacy main() runs with the entry procedure gone"
+# Nor may the legacy loop hold the lock then: HAF refuses it (haf#403), so a
+# crash-looping loop never blocks the repair. HAF finds the app by the lock name,
+# which is why reputation tracker registers under it (#23).
+if [ "$(sql "SELECT to_regprocedure('hive._missing_app_process_procedure(text)') IS NOT NULL")" = "t" ]; then
+  status=0
+  out="$(call_main)" || status=$?
+  if [ "$status" -ne 124 ] && grep -qF "Cannot take block-processor lock on reputation_tracker: its process procedure reptracker_app.process_blocks( hive.blocks_range ) does not exist" <<<"$out"; then
+    echo "PASS  HAF refuses legacy main() the lock with the entry procedure gone"
+  else
+    fail "HAF refuses legacy main() the lock with the entry procedure gone: exit $status" "$out"
+  fi
+elif [ -n "${CI:-}" ]; then
+  # CI runs develop HAF, which has the check: its absence means a stale image
+  fail "HAF refuses legacy main() the lock with the entry procedure gone: this HAF has no haf#403 check"
+else
+  run_main "legacy main() runs with the entry procedure gone (HAF before haf#403)"
+fi
 sql "ALTER PROCEDURE reptracker_app.process_blocks_hidden(hive.blocks_range) RENAME TO process_blocks"
 expect "entry procedure restored" DRIVER
 
 # Another application owns the context and drives it: no second loop
 sql "DELETE FROM hafd.applications WHERE name = 'other_app'"  # left by an earlier run
-sql "UPDATE hafd.applications SET name = 'other_app' WHERE name = 'reptracker_app'"
+sql "UPDATE hafd.applications SET name = 'other_app' WHERE name = 'reputation_tracker'"
 expect "context owned by an embedding application" NONE "belongs to another application"
 
 # A runnable row under another name, for another context, does not count for this app
@@ -167,10 +200,64 @@ sql "UPDATE hafd.applications SET contexts = ARRAY['other_context'] WHERE name =
 expect "not in the registry, another application is" LEGACY
 expect "--stop-at-block reaches the legacy loop" LEGACY "main\('reptracker_app', 5\)" -- --postgres-url="$OWNER_URL" --stop-at-block=5
 sql "DELETE FROM hafd.applications WHERE name = 'other_app'"
-"$script_dir/install_app.sh" --postgres-url="$ADMIN_URL" > /dev/null 2>&1
+
+as_owner() { sql "SET ROLE reptracker_owner; $1" > /dev/null; }
+registered_as() { sql "SELECT name FROM hafd.applications WHERE contexts @> ARRAY['reptracker_app'] ORDER BY name"; }
+# reinstall <case> <expected registry name> [WARNING the install must print]
+reinstall() {
+  local status=0 out got
+  out="$("$script_dir/install_app.sh" --postgres-url="$ADMIN_URL" 2>&1)" || status=$?
+  got="$(registered_as)"
+  if [ "$status" -ne 0 ] || [ "$got" != "$2" ]; then
+    fail "$1: install exit $status, registered as '$got', expected '$2'" "$(grep -E 'ERROR|WARNING' <<<"$out" || true)"
+  elif [ -n "${3:-}" ] && ! grep -q -- "$3" <<<"$out"; then
+    fail "$1: the install did not warn '$3'" "$(grep -E 'ERROR|WARNING' <<<"$out" || true)"
+  else
+    echo "PASS  $1"
+  fi
+}
+reinstall "reinstall registers reputation_tracker again" reputation_tracker
 
 # The real legacy loop, holding the reputation_tracker application lock
 run_main "legacy main() runs"
+
+# An install before #23 registered under the schema name: the driver keeps working
+# under it, and a reinstall moves the registration to the lock name, paused if it was
+as_owner "SELECT hive.app_unregister('reputation_tracker'); SELECT hive.app_register('reptracker_app', ARRAY['reptracker_app']::hive.contexts_group, 'reptracker_app.process_blocks'); SELECT hive.app_pause('reptracker_app')"
+APP_NAME=reptracker_app expect "registered under the schema name (before #23)" DRIVER
+reinstall "reinstall moves the registration to reputation_tracker" reputation_tracker
+if [ "$(sql "SELECT paused FROM hafd.applications WHERE name = 'reputation_tracker'")" = "t" ]; then
+  echo "PASS  the moved registration stays paused"
+else
+  fail "the moved registration stays paused"
+fi
+as_owner "SELECT hive.app_resume('reputation_tracker')"
+
+# An old row with registry dependencies keeps its name: moving it would drop them
+as_owner "SELECT hive.app_unregister('reputation_tracker'); SELECT hive.app_register('reptracker_app', ARRAY['reptracker_app']::hive.contexts_group, 'reptracker_app.process_blocks')"
+sql "INSERT INTO hafd.applications ( name, contexts, owner ) VALUES ( 'dep_target', ARRAY['other_context'], 'reptracker_owner' );
+     INSERT INTO hafd.application_dependencies ( application, depends_on ) VALUES ( 'reptracker_app', 'dep_target' )"
+reinstall "an old registration with dependencies keeps its name" reptracker_app "has registry dependencies"
+if [ "$(sql "SELECT count(*) FROM hafd.application_dependencies WHERE application = 'reptracker_app' AND depends_on = 'dep_target'")" = "1" ]; then
+  echo "PASS  its dependencies are kept"
+else
+  fail "its dependencies are kept"
+fi
+sql "DELETE FROM hafd.applications WHERE name IN ('reptracker_app', 'dep_target')"
+reinstall "reinstall registers reputation_tracker again" reputation_tracker
+
+# Another reputation tracker (another schema) holds the name: this one keeps its
+# schema name instead of taking that registration
+sql "UPDATE hafd.applications SET contexts = ARRAY['other_context'] WHERE name = 'reputation_tracker'"
+reinstall "a second reputation tracker registers under its schema name" reptracker_app "is registered for another reputation tracker"
+if [ "$(sql "SELECT contexts FROM hafd.applications WHERE name = 'reputation_tracker'")" = "{other_context}" ]; then
+  echo "PASS  the first one's registration is untouched"
+else
+  fail "the first one's registration is untouched"
+fi
+APP_NAME=reptracker_app expect "second reputation tracker" DRIVER
+sql "DELETE FROM hafd.applications WHERE name IN ('reputation_tracker', 'reptracker_app')"
+reinstall "reinstall registers reputation_tracker again" reputation_tracker
 
 # A HAF without the lock helpers (1.28.7 and older)
 sql "ALTER FUNCTION hive.acquire_app_block_processor_locks(text[]) RENAME TO acquire_app_block_processor_locks_hidden_by_test"

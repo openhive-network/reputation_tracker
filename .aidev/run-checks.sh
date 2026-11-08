@@ -175,7 +175,8 @@ current_block() {
 # image's scripts/process_blocks.sh runs it (as reptracker_owner), then ANALYZE.
 sync_blocks() {
     local block
-    haf_app_driver.py --app="$SCHEMA" \
+    # the registry name is the lock name (#23), not the schema
+    haf_app_driver.py --app=reputation_tracker \
         --postgres-url="$REPTRACKER_TEST_DB_URL?application_name=reptracker_block_processing&options=-c%20role%3Dreptracker_owner" \
         --lock=reputation_tracker --stop-at-block="$STOP_AT_BLOCK" --startup-marker='' \
         --server-messages=WARNING || return 1

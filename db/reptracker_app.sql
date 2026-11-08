@@ -659,6 +659,8 @@ DO $$
 DECLARE
   __schema_name VARCHAR;
   __owning_app TEXT;
+  __app_name TEXT := 'reputation_tracker';
+  __old_paused BOOLEAN;
 BEGIN
   SHOW SEARCH_PATH INTO __schema_name;
 
@@ -688,17 +690,56 @@ BEGIN
     RETURN;
   END IF;
 
+  -- Registered under the name of its block-processor lock, 'reputation_tracker'
+  -- (scripts/install_app.sh, main(), scripts/process_blocks.sh, and hivemind,
+  -- which depends on it). HAF's lock helpers look the app up in the registry by
+  -- the lock name, to refuse holding or skipping an install for an app whose
+  -- entry procedure is gone (haf#403); under the schema name they never find it
+  -- (#23).
+  --
   -- An embedding application may re-register this context as part of its own
-  -- context group afterwards. On a re-install under such an application the
-  -- context already belongs to it, and registering would fail: leave the
-  -- embedding registration in place.
+  -- context group afterwards (it must first unregister whichever of the two
+  -- names holds it). On a re-install under such an application the context
+  -- already belongs to it, and registering would fail: leave the embedding
+  -- registration in place.
   SELECT a.name INTO __owning_app
   FROM hafd.applications a
-  WHERE a.name != __schema_name AND a.contexts @> ARRAY[ __schema_name::TEXT ];
+  WHERE a.name NOT IN ( __app_name, __schema_name ) AND a.contexts @> ARRAY[ __schema_name::TEXT ];
   IF __owning_app IS NOT NULL THEN
     RAISE NOTICE 'Context % already belongs to application %; keeping that registration', __schema_name, __owning_app;
-  ELSE
-    PERFORM hive.app_register( __schema_name, ARRAY[ __schema_name ]::hive.contexts_group, __schema_name || '.process_blocks' );
+    RETURN;
+  END IF;
+
+  -- One name, one row: a second reputation tracker in this database (another
+  -- schema) keeps the schema name rather than take the first one's registration.
+  -- Both share the 'reputation_tracker' lock, so HAF checks the first one's
+  -- entry procedure for the second one's processing too.
+  IF EXISTS ( SELECT 1 FROM hafd.applications a WHERE a.name = __app_name AND NOT a.contexts @> ARRAY[ __schema_name::TEXT ] ) THEN
+    RAISE WARNING 'Application % is registered for another reputation tracker; registering % under its schema name. HAF checks the other one''s entry procedure when this one takes the shared reputation_tracker lock', __app_name, __schema_name;
+    __app_name := __schema_name;
+  END IF;
+
+  -- Installs before #23 registered under the schema name. While that row holds
+  -- the context, app_register would take it for an embedding and skip, so it is
+  -- moved: unregistered, then registered under the new name in the same
+  -- transaction, paused if it was. Dependencies on or of the old row would be
+  -- dropped with it (they cascade), and only their owners can declare them
+  -- again: such a row keeps its name.
+  SELECT a.paused INTO __old_paused
+  FROM hafd.applications a
+  WHERE a.name = __schema_name AND a.contexts = ARRAY[ __schema_name::TEXT ];
+  IF __app_name <> __schema_name AND __old_paused IS NOT NULL THEN
+    IF EXISTS ( SELECT 1 FROM hafd.application_dependencies d WHERE __schema_name IN ( d.application, d.depends_on ) ) THEN
+      RAISE WARNING 'Application % has registry dependencies; keeping that name. HAF''s check for a missing entry procedure will not apply to it until they are moved to %', __schema_name, __app_name;
+      __app_name := __schema_name;
+    ELSE
+      PERFORM hive.app_unregister( __schema_name );
+    END IF;
+  END IF;
+
+  PERFORM hive.app_register( __app_name, ARRAY[ __schema_name ]::hive.contexts_group, __schema_name || '.process_blocks' );
+  IF __app_name <> __schema_name AND __old_paused THEN
+    PERFORM hive.app_pause( __app_name );
   END IF;
 END
 $$;

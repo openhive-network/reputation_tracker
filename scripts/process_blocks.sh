@@ -66,12 +66,14 @@ done
 POSTGRES_ACCESS=${POSTGRES_URL:-"postgresql://$POSTGRES_USER@$POSTGRES_HOST:$POSTGRES_PORT/haf_block_log?application_name=reptracker_block_processing"}
 
 # Asks the HAF application registry who should process ${REPTRACKER_SCHEMA}'s blocks.
-# Prints one of:
-#   driver    registered under its own name with an entry procedure that exists
-#   noentry   registered under its own name, but with no entry procedure or one that is
-#             gone (e.g. after an uninstall whose context removal failed). The driver
-#             cannot run it; the legacy main() loop can, as it calls the processing
-#             procedures directly
+# Its own row is the one holding the context under the name db/reptracker_app.sql
+# registers: 'reputation_tracker', the lock name (#23), or the schema name (installs
+# before #23, or a second reputation tracker in the database). Prints one of:
+#   driver <name>  its own row, with an entry procedure that exists
+#   noentry   its own row, but with no entry procedure or one that is gone (e.g. after
+#             an uninstall whose context removal failed). The driver cannot run it; the
+#             legacy main() loop can on a HAF before haf#403, and on a later one HAF
+#             refuses it with "reinstall the application"
 #   embedded  another application owns the context and drives it
 #   legacy    not in the registry, mostly on a HAF older than the registry (1.28.7 and
 #             older), where db/reptracker_app.sql skips registration
@@ -90,18 +92,27 @@ registry_probe() {
     psql "$POSTGRES_ACCESS" -X -w -Atq -v ON_ERROR_STOP=on -v app="${REPTRACKER_SCHEMA}" <<'EOF'
 SELECT to_regclass('hafd.applications') IS NOT NULL AS has_registry \gset
 \if :has_registry
+WITH holder AS (
+  SELECT name, process_procedure,
+         name IN ( 'reputation_tracker', :'app' ) AS own
+  FROM hafd.applications
+  WHERE contexts @> ARRAY[ :'app' ]::TEXT[])
 SELECT CASE
   WHEN EXISTS (
-    SELECT 1 FROM hafd.applications
-    WHERE name = :'app'
+    SELECT 1 FROM holder
+    WHERE own
       AND process_procedure IS NOT NULL
       AND to_regprocedure(process_procedure || '(hive.blocks_range)') IS NOT NULL)
-  THEN 'driver'
-  WHEN EXISTS (SELECT 1 FROM hafd.applications WHERE name = :'app')
+  THEN 'driver ' || (
+    SELECT name FROM holder
+    WHERE own
+      AND process_procedure IS NOT NULL
+      AND to_regprocedure(process_procedure || '(hive.blocks_range)') IS NOT NULL
+    ORDER BY name = 'reputation_tracker' DESC
+    LIMIT 1)
+  WHEN EXISTS (SELECT 1 FROM holder WHERE own)
   THEN 'noentry'
-  WHEN EXISTS (
-    SELECT 1 FROM hafd.applications
-    WHERE name <> :'app' AND contexts @> ARRAY[ :'app' ]::TEXT[])
+  WHEN EXISTS (SELECT 1 FROM holder)
   THEN 'embedded'
   ELSE 'legacy'
 END;
@@ -162,11 +173,12 @@ process_blocks() {
         choose_loop
         trap - TERM INT
         case "$LOOP" in
-            driver)
-                echo "${REPTRACKER_SCHEMA} is registered in the HAF application registry; running haf_app_driver.py"
+            driver\ ?*)
+                local app_name="${LOOP#driver }"
+                echo "${REPTRACKER_SCHEMA} is registered in the HAF application registry as ${app_name}; running haf_app_driver.py"
                 local limit_arg=()
                 [ "$n_blocks" != "null" ] && limit_arg=(--stop-at-block="$n_blocks")
-                exec haf_app_driver.py --app="${REPTRACKER_SCHEMA}" --postgres-url="$POSTGRES_ACCESS" --lock=reputation_tracker "${limit_arg[@]}"
+                exec haf_app_driver.py --app="${app_name}" --postgres-url="$POSTGRES_ACCESS" --lock=reputation_tracker "${limit_arg[@]}"
                 ;;
             noentry)
                 echo "WARNING: ${REPTRACKER_SCHEMA} is in the HAF application registry, but its entry procedure"
