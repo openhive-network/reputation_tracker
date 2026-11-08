@@ -68,12 +68,13 @@ POSTGRES_ACCESS=${POSTGRES_URL:-"postgresql://$POSTGRES_USER@$POSTGRES_HOST:$POS
 # Asks the HAF application registry who should process ${REPTRACKER_SCHEMA}'s blocks.
 # Prints one of:
 #   driver    registered under its own name with an entry procedure that exists
-#   broken    registered under its own name, but with no entry procedure or one that is
-#             gone (e.g. after an uninstall whose context removal failed). The legacy
-#             loop would fail too: HAF's lock helper refuses such an app ("reinstall")
+#   noentry   registered under its own name, but with no entry procedure or one that is
+#             gone (e.g. after an uninstall whose context removal failed). The driver
+#             cannot run it; the legacy main() loop can, as it calls the processing
+#             procedures directly
 #   embedded  another application owns the context and drives it
-#   legacy    not in the registry at all, mostly a HAF older than the registry (haf#341),
-#             where db/reptracker_app.sql skips registration
+#   legacy    not in the registry, mostly on a HAF older than the registry (1.28.7 and
+#             older), where db/reptracker_app.sql skips registration
 #
 # Checking that haf_app_driver.py is on PATH is not enough: the psql base image has
 # shipped it since 14-3, and the driver exits before its first range when the app is
@@ -97,7 +98,7 @@ SELECT CASE
       AND to_regprocedure(process_procedure || '(hive.blocks_range)') IS NOT NULL)
   THEN 'driver'
   WHEN EXISTS (SELECT 1 FROM hafd.applications WHERE name = :'app')
-  THEN 'broken'
+  THEN 'noentry'
   WHEN EXISTS (
     SELECT 1 FROM hafd.applications
     WHERE name <> :'app' AND contexts @> ARRAY[ :'app' ]::TEXT[])
@@ -110,24 +111,36 @@ SELECT 'legacy';
 EOF
 }
 
-# A database that is briefly unreachable at start must not decide the loop for the
-# container's whole life: retry while psql cannot connect (exit status 2), then give up
-# and leave the retry to the restart policy.
+# Sets LOOP to the probe's answer, or to "error" (a query that failed on a live
+# connection, e.g. a privilege missing) or "unreachable", with psql's last error line in
+# PROBE_ERROR. Neither failure falls back to the legacy loop: for an embedded context
+# that would start a second loop on it.
+#
+# psql exits 2 when it cannot connect. That is retried, like the driver and
+# run_with_reconnect.sh retry a lost connection: a database briefly down at start must
+# not decide the loop for the container's whole life. REGISTRY_PROBE_ATTEMPTS bounds the
+# attempts (0, the default: no bound). Runs in this shell, not in $( ): bash, PID 1 in
+# the container, then takes docker's SIGTERM between attempts (see the trap below).
 choose_loop() {
-    local attempt answer status
-    for attempt in $(seq 1 "${REGISTRY_PROBE_ATTEMPTS:-12}"); do
+    local attempt=0 status errfile
+    errfile="$(mktemp)"
+    while :; do
+        attempt=$((attempt + 1))
         status=0
-        answer="$(registry_probe 2>/dev/null)" || status=$?
-        if [ "$status" -ne 2 ]; then
-            # 0: the registry's answer. Anything else is a query that failed on a live
-            # connection (e.g. a privilege missing), which a retry would not change.
-            [ "$status" -eq 0 ] && echo "$answer" || echo "legacy"
-            return 0
+        LOOP="$(registry_probe 2>"$errfile")" || status=$?
+        PROBE_ERROR="$(grep -v '^\s*$' "$errfile" | tail -n 1 || true)"
+        case "$status" in
+            0) break ;;
+            2) ;;
+            *) LOOP="error"; break ;;
+        esac
+        if [ "${REGISTRY_PROBE_ATTEMPTS:-0}" -gt 0 ] && [ "$attempt" -ge "${REGISTRY_PROBE_ATTEMPTS}" ]; then
+            LOOP="unreachable"; break
         fi
-        echo "Cannot connect to the database to check the HAF application registry (attempt $attempt); retrying" >&2
-        sleep "${REGISTRY_PROBE_RETRY_SECONDS:-5}"
+        echo "Cannot connect to the database to check the HAF application registry (attempt $attempt): ${PROBE_ERROR}; retrying"
+        sleep "${REGISTRY_PROBE_RETRY_SECONDS:-5}" & wait $!
     done
-    echo "unreachable"
+    rm -f "$errfile"
 }
 
 process_blocks() {
@@ -142,33 +155,43 @@ process_blocks() {
     if ! command -v haf_app_driver.py >/dev/null 2>&1; then
         echo "WARNING: haf_app_driver.py not found, falling back to the legacy CALL main() loop"
     else
-        case "$(choose_loop)" in
+        case "${REGISTRY_PROBE_ATTEMPTS:-0}" in
+            ''|*[!0-9]*) echo "ERROR: REGISTRY_PROBE_ATTEMPTS must be a number (0: no bound)"; exit 1 ;;
+        esac
+        trap 'exit 143' TERM INT
+        choose_loop
+        trap - TERM INT
+        case "$LOOP" in
             driver)
                 echo "${REPTRACKER_SCHEMA} is registered in the HAF application registry; running haf_app_driver.py"
                 local limit_arg=()
                 [ "$n_blocks" != "null" ] && limit_arg=(--stop-at-block="$n_blocks")
                 exec haf_app_driver.py --app="${REPTRACKER_SCHEMA}" --postgres-url="$POSTGRES_ACCESS" --lock=reputation_tracker "${limit_arg[@]}"
                 ;;
-            broken)
-                echo "ERROR: ${REPTRACKER_SCHEMA} is in the HAF application registry, but its entry procedure"
-                echo "       is missing. Reinstall reputation tracker (scripts/install_app.sh)."
-                exit 1
+            noentry)
+                echo "WARNING: ${REPTRACKER_SCHEMA} is in the HAF application registry, but its entry procedure"
+                echo "         is missing, so haf_app_driver.py cannot run it; falling back to the legacy"
+                echo "         CALL main() loop. Re-run the reputation tracker install to restore it."
                 ;;
             embedded)
                 # Its loop already processes this context; a second one must not.
                 echo "ERROR: the ${REPTRACKER_SCHEMA} context belongs to another application in the HAF"
                 echo "       application registry, whose block processing drives it. Not starting a second"
-                echo "       loop: stop this block processing service."
+                echo "       loop: this block processing service is not needed."
+                exit 1
+                ;;
+            error)
+                echo "ERROR: could not read the HAF application registry: ${PROBE_ERROR}"
                 exit 1
                 ;;
             unreachable)
-                echo "ERROR: could not connect to the database to check the HAF application registry"
+                echo "ERROR: could not connect to the database to check the HAF application registry: ${PROBE_ERROR}"
                 exit 1
                 ;;
             *)
                 echo "WARNING: haf_app_driver.py is on PATH, but the HAF application registry does not list"
-                echo "         ${REPTRACKER_SCHEMA} (HAF older than haf#341, or the registry could not be"
-                echo "         read); falling back to the legacy CALL main() loop"
+                echo "         ${REPTRACKER_SCHEMA} (a HAF older than the registry, 1.28.7 and older, has none);"
+                echo "         falling back to the legacy CALL main() loop"
                 ;;
         esac
     fi

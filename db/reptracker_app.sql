@@ -540,7 +540,7 @@ DECLARE
 BEGIN
   -- Block until any active reputation_tracker installer releases its
   -- exclusive lock; held by this session until main() returns. A HAF older
-  -- than the lock helpers (before 1.28.8) has none: run without the lock, as
+  -- than the lock helpers (1.28.7 and older) has none: run without the lock, as
   -- install_with_app_lock.py does on such a HAF (#12).
   IF to_regprocedure('hive.acquire_app_block_processor_locks(text[])') IS NOT NULL THEN
     PERFORM hive.acquire_app_block_processor_locks(ARRAY['reputation_tracker']);
@@ -679,7 +679,7 @@ BEGIN
 
   -- Register with the HAF application registry so a generic driver can run
   -- this application and other applications can declare dependencies on it.
-  -- A HAF older than haf#341 has no registry: install anyway and leave the
+  -- A HAF older than haf#341 (1.28.7 and older) has no registry: install anyway and leave the
   -- block processing to the legacy main() loop. scripts/process_blocks.sh
   -- checks the registry before it starts the driver, so the two agree (#12).
   -- PL/pgSQL plans the query below only when it runs, so this check is enough.
