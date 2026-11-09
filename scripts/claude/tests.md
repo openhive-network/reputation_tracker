@@ -65,6 +65,9 @@ must answer exactly as a direct JSON POST of the same arguments (the oracle):
 The `rewriter` service in `docker/docker-compose-test.yml` (profile `rewriter`, port
 `REWRITER_PORT`, default 3080) runs the image; `REPTRACKER_ADDRESS`/`REPTRACKER_PORT` still
 point at PostgREST.
+AIDEV's full and canary slots run the suite too (`.aidev/run-checks.sh`'s `rewriter` step,
+see `.aidev/README.md`), with the rewriter assembled from `Dockerfile.rewriter` inside the
+check runtime.
 
 ### Performance Tests (`tests/performance/`)
 

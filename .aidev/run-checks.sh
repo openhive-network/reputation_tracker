@@ -25,6 +25,14 @@
 #                     against hived's reputation_api.get_account_reputations dump
 #   - tavern          the tavern pattern tests (tests/tavern) against PostgREST over
 #                     the clone, by .aidev/reptracker_tavern.py; one junit case per test
+#   - rewriter        tests/rewriter (CI's rewriter-test) through the candidate's rewriter,
+#                     in front of PostgREST over the clone, by .aidev/reptracker_rewriter.py:
+#                     scripts/openapi_rewrite.sh must regenerate the committed
+#                     endpoints/rewrite_rules.conf and rpc_arguments.lua, then the image
+#                     Dockerfile.rewriter describes is assembled over its FROM, which the
+#                     runtime image carries (there is no docker daemon to build it), and its
+#                     entrypoint started; one junit case per test. Skipped, with the
+#                     reason, on a runtime image without that base
 #   - reinstall       scripts/install_app.sh again over the installed, synced schema
 #                     (an upgrade in place, as CI's setup-scripts-test), then the
 #                     synced block is checked to be unchanged and the volatility
@@ -34,8 +42,9 @@
 #
 # Every step after install needs the shared HAF (sandbox.external haf, provider
 # haf/haf); the clone is dropped when the script exits, pass or fail. sync needs
-# install; regression and tavern need sync. Reports go to test-results/<suite>/:
-# junit.xml (one case per step) plus tavern.xml.
+# install; regression, tavern and rewriter need sync. Reports go to test-results/<suite>/:
+# junit.xml (one case per step) plus tavern.xml and rewriter.xml. A step that exits
+# SKIP (77) is reported skipped, with its log's last line as the reason.
 set -uo pipefail
 cd "$(dirname "$0")/.." || exit 1
 
@@ -56,10 +65,13 @@ synced=""
 exec 3>&2
 
 status=0
+SKIP=77
 # record CASES_FILE NAME RC SECONDS LOG
 record() {
     if [ "$3" -eq 0 ]; then
         printf 'case\t%s\tpass\t%s\t\n' "$2" "$4" >> "$1"
+    elif [ "$3" -eq "$SKIP" ]; then
+        printf 'case\t%s\tskip\t%s\t%s\n' "$2" "$4" "$(tail -1 "$5" | tr '\t' ' ')" >> "$1"
     else
         printf 'case\t%s\tfail\t%s\texit %s\t%s\n' "$2" "$4" "$3" "$5" >> "$1"
     fi
@@ -70,7 +82,11 @@ step() {
     local log="$out/$name.log" t0=$SECONDS rc=0
     echo "== $name" >&2
     "$@" > "$log" 2>&1 < /dev/null || rc=$?
-    [ "$rc" -eq 0 ] || { status=1; tail -40 "$log" >&2; }
+    if [ "$rc" -eq "$SKIP" ]; then
+        tail -1 "$log" >&2
+    elif [ "$rc" -ne 0 ]; then
+        status=1; tail -40 "$log" >&2
+    fi
     record "$cases" "$name" "$rc" "$((SECONDS - t0))" "$log"
 }
 
@@ -283,6 +299,7 @@ for s in "$@"; do
         sync) step sync needs_clone sync_blocks ;;
         regression) step regression needs_sync regression ;;
         tavern) step tavern needs_sync python3 .aidev/reptracker_tavern.py "$out" ;;
+        rewriter) step rewriter needs_sync python3 .aidev/reptracker_rewriter.py "$out" ;;
         reinstall) step reinstall needs_clone reinstall ;;
         uninstall) step uninstall needs_clone uninstall ;;
         *) echo "unknown step: $s" >&2; exit 2 ;;
