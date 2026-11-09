@@ -189,6 +189,7 @@ To add a new endpoint:
 1. Create SQL file in `endpoints/` with OpenAPI comment block
 2. Use `reptracker_endpoints` schema for the function
 3. Run `scripts/generate_openapi.sh` to regenerate `endpoint_schema.sql`
+   and `scripts/openapi_rewrite.sh` to regenerate the rewriter's `endpoints/rewrite_rules.conf` and `endpoints/rpc_arguments.lua` (the arguments each function declares: the rewriter forwards only those in a GET's form POST body, every other parameter stays a PostgREST query parameter)
 4. Grant execute permission to `reptracker_user`
 5. Qualify every app-schema table: endpoints are called from sessions whose `search_path` lacks the app schema. Wrap the definition in a `DO` block that reads the install schema with `SHOW SEARCH_PATH` and builds the function with `format()` (`%1$I.table`), as `get_reputation.sql` and `get_rep_version.sql` do. Any other literal `%` in the body must then be written `%%`.
 6. Declare the function `STABLE` (or `IMMUTABLE`), after the `openapi-generated-code-end` marker so regeneration keeps it. The rewriter forwards REST GETs to PostgREST as POSTs, and PostgREST runs a POST to a VOLATILE function read-write. `.aidev/endpoint_volatility_check.sql` fails install verification on any VOLATILE function in `reptracker_endpoints`.

@@ -140,11 +140,11 @@ The API will be available at `http://localhost:3000`.
 `fts.`, ...): a GET straight to PostgREST reads such an argument as a filter, not as an argument
 (`400 PGRST100`, or the argument is dropped and `404 PGRST202`). Direct PostgREST callers with
 such values must POST them, as JSON or form-encoded. The public REST paths are not affected: the
-postgrest-rewriter (`docker/reputation_tracker_nginx.conf.template`) forwards every GET of a
-function to PostgREST as a form-encoded POST, keeping PostgREST's own parameters in the URL:
-`select`, `columns`, `on_conflict`, and any name whose last dot-separated part is `limit`,
-`offset`, `order`, `and` or `or` (`child.limit`, `not.or`; `page-limit` is an ordinary
-argument). So an endpoint function cannot take an argument with one of those names.
+postgrest-rewriter (`docker/reputation_tracker_nginx.conf.template`, with common-ci-configuration's
+`hive.rpc_form` module) forwards a GET or HEAD of a function to PostgREST as a form-encoded POST of
+the arguments the function declares (`endpoints/rpc_arguments.lua`). Every other parameter stays
+in the URL, where it keeps its PostgREST meaning: a column filter, `select`, `order`, `limit`,
+`offset`, `and`, `or`.
 
 ### Docker Commands
 

@@ -49,6 +49,6 @@ def direct_get(function: str, query: str):
     return answer(requests.get(f"{POSTGREST}/rpc/{function}?{query}", timeout=TIMEOUT_S))
 
 
-def postgrest_code(ans):
+def postgrest_code(ans: tuple[int, object]) -> object:
     _status, body = ans
     return body.get("code") if isinstance(body, dict) else None

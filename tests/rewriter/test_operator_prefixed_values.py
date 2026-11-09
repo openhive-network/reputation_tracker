@@ -14,7 +14,7 @@ import pytest
 
 from common import direct_post, postgrest_code, via_rewriter
 
-VALUES = ["not.existing", "eq.blocktrades", "in.(gtg)", "like.gtg*", "is.null", "fts.gtg"]
+VALUES = ["not.existing", "not.blocktrades", "eq.blocktrades", "in.(gtg)", "like.gtg*", "is.null", "fts.gtg"]
 
 PATH_ROUTE = "/accounts/{v}/reputation"
 CATCH_ALL_ROUTE = "/get_account_reputation"

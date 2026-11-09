@@ -1,8 +1,9 @@
-"""PostgREST's own parameters keep their meaning through the rewriter (#18).
+"""PostgREST's own parameters keep their meaning through the rewriter (#18, #25).
 
-The rewriter moves a GET's function arguments into a form body but keeps PostgREST's
-reserved parameters (select, columns, on_conflict, ...limit, ...offset, ...order, ...and,
-...or) in the URL. In the body PostgREST would read one as an argument the function does
+The rewriter moves into a form body only the parameters the function declares
+(endpoints/rpc_arguments.lua) and keeps every other one in the URL: PostgREST's reserved
+parameters (select, columns, on_conflict, ...limit, ...offset, ...order, ...and, ...or)
+and column filters. In the body PostgREST would read one as an argument the function does
 not have (PGRST202), so each answer here must match a direct POST that sends the same
 parameter in the query string.
 """
@@ -18,8 +19,9 @@ ARGS = {"account-name": "blocktrades"}
 
 
 def test_no_endpoint_argument_has_a_reserved_name():
-    """The rewriter keeps these names in the URL, so a function argument with one of them
-    would never reach the function. Checked against every reptracker_endpoints signature."""
+    """A GET straight to PostgREST takes these names for its own parameters, so a function
+    argument with one of them could only be passed by POST. Checked against every
+    reptracker_endpoints signature."""
     reserved = {"select", "columns", "on_conflict"}
     reserved_last = {"limit", "offset", "order", "and", "or"}
     signature = re.compile(r"CREATE OR REPLACE FUNCTION reptracker_endpoints\.(\w+)\s*\((.*?)\)\s*RETURNS",
@@ -70,6 +72,31 @@ def test_reserved_parameter_keeps_its_meaning(route, query):
     got = _via_rewriter(route, query)
     want = direct_post("get_account_reputation", ARGS, query=query)
     assert want[0] != 200 and postgrest_code(want) != "PGRST202", want
+    assert got == want
+
+
+OPERATOR_VALUE = {"account-name": "eq.blocktrades"}
+
+
+# A column filter is a parameter no function declares, named after a result column. Every
+# reptracker endpoint returns a scalar, whose one column PostgREST does not filter on
+# (42703): the answer shows the filter reached PostgREST as a filter; in the body, it would
+# be an unknown argument (PGRST202). The operator-prefixed argument beside it still goes to
+# the body, as the split is by name, never by value.
+# Cases: route, its query arguments, the function, the arguments the function receives.
+@pytest.mark.parametrize("route, route_args, function, args", [
+    ("/accounts/blocktrades/reputation", {}, "get_account_reputation", ARGS),
+    ("/get_account_reputation", ARGS, "get_account_reputation", ARGS),
+    ("/get_account_reputation", OPERATOR_VALUE, "get_account_reputation", OPERATOR_VALUE),
+    ("/last-synced-block", {}, "get_rep_last_synced_block", {}),
+], ids=["path", "catch-all", "catch-all-operator-value", "no-arguments"])
+@pytest.mark.parametrize("operator", ["gte.0", "not.eq.0"])
+def test_column_filter_keeps_its_meaning(route: str, route_args: dict[str, str], function: str,
+                                         args: dict[str, str], operator: str) -> None:
+    query = {function: operator}
+    got = via_rewriter(route, {**route_args, **query})
+    want = direct_post(function, args, query=query)
+    assert want[0] == 400 and postgrest_code(want) not in ("PGRST100", "PGRST202"), want
     assert got == want
 
 

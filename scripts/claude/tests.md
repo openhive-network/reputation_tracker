@@ -58,7 +58,9 @@ must answer exactly as a direct JSON POST of the same arguments (the oracle):
   prefix (`not.`, `eq.`, `in.`, ...) reach `get_account_reputation` verbatim, on the path
   route and the catch-all route (#18).
 - `test_reserved_parameters.py` - PostgREST's own parameters (`limit`, `offset`, `select`)
-  stay in the URL, and no endpoint argument has a reserved name.
+  and column filters stay in the URL, and no endpoint argument has a reserved name.
+- `test_head.py` - a HEAD answers with its GET's status and no body, and a GET after it on
+  the same keep-alive connection is framed correctly (#25).
 
 The `rewriter` service in `docker/docker-compose-test.yml` (profile `rewriter`, port
 `REWRITER_PORT`, default 3080) runs the image; `REPTRACKER_ADDRESS`/`REPTRACKER_PORT` still
