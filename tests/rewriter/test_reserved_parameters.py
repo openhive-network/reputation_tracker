@@ -18,7 +18,7 @@ ENDPOINTS = pathlib.Path(__file__).resolve().parents[2] / "endpoints"
 ARGS = {"account-name": "blocktrades"}
 
 
-def test_no_endpoint_argument_has_a_reserved_name():
+def test_no_endpoint_argument_has_a_reserved_name() -> None:
     """A GET straight to PostgREST takes these names for its own parameters, so a function
     argument with one of them could only be passed by POST. Checked against every
     reptracker_endpoints signature."""
@@ -52,7 +52,7 @@ def _via_rewriter(route, query):
                                    {"order": "get_account_reputation.desc"}, {"x.limit": "1"}],
                          ids=lambda q: "&".join(q))
 @pytest.mark.parametrize("route", ROUTES)
-def test_reserved_parameter_is_not_an_argument(route, query):
+def test_reserved_parameter_is_not_an_argument(route, query) -> None:
     got = _via_rewriter(route, query)
     want = direct_post("get_account_reputation", ARGS, query=query)
     assert postgrest_code(got) != "PGRST202", got
@@ -68,7 +68,7 @@ def test_reserved_parameter_is_not_an_argument(route, query):
                                    {"limit": "-1"}, {"x.offset": "0"}],
                          ids=lambda q: "&".join(q))
 @pytest.mark.parametrize("route", ROUTES)
-def test_reserved_parameter_keeps_its_meaning(route, query):
+def test_reserved_parameter_keeps_its_meaning(route, query) -> None:
     got = _via_rewriter(route, query)
     want = direct_post("get_account_reputation", ARGS, query=query)
     assert want[0] != 200 and postgrest_code(want) != "PGRST202", want
@@ -100,7 +100,7 @@ def test_column_filter_keeps_its_meaning(route: str, route_args: dict[str, str],
     assert got == want
 
 
-def test_calls_without_arguments_and_json_posts_unchanged():
+def test_calls_without_arguments_and_json_posts_unchanged() -> None:
     assert via_rewriter("/version") == direct_post("get_reptracker_version", {})
     assert via_rewriter("/sync-status") == direct_get("get_rep_sync_status", "")
     assert via_rewriter("/last-synced-block") == direct_get("get_rep_last_synced_block", "")
