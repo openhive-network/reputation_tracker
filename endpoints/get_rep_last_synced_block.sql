@@ -47,7 +47,7 @@ DROP FUNCTION IF EXISTS reptracker_endpoints.get_rep_last_synced_block;
 CREATE OR REPLACE FUNCTION reptracker_endpoints.get_rep_last_synced_block()
 RETURNS INT 
 -- openapi-generated-code-end
-LANGUAGE 'plpgsql' VOLATILE
+LANGUAGE 'plpgsql' STABLE
 AS
 $pb$
 BEGIN

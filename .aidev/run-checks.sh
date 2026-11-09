@@ -13,7 +13,10 @@
 #                     database)
 #   - install         a copy-on-write clone of the shared 5M-block HAF for this run
 #                     (haf_shared.clone_run_database on AIDEV_EXTERNAL_HAF_HOST:_PORT,
-#                     as haf_shared_consumer), scripts/install_app.sh into it
+#                     as haf_shared_consumer), scripts/install_app.sh into it, then
+#                     .aidev/endpoint_volatility_check.sql (no reptracker_endpoints
+#                     function is VOLATILE, the endpoints answer in a READ ONLY
+#                     transaction as reptracker_user)
 #   - sync            the candidate's block processing over the clone's 5,000,000
 #                     blocks (haf_app_driver.py, as scripts/process_blocks.sh runs it),
 #                     then ANALYZE, then the vacuum requests (no permlinks request,
@@ -24,7 +27,8 @@
 #                     the clone, by .aidev/reptracker_tavern.py; one junit case per test
 #   - reinstall       scripts/install_app.sh again over the installed, synced schema
 #                     (an upgrade in place, as CI's setup-scripts-test), then the
-#                     synced block is checked to be unchanged
+#                     synced block is checked to be unchanged and the volatility
+#                     check is run again
 #   - uninstall       scripts/uninstall_app.sh, then the context and schemas are gone,
 #                     then install again from scratch
 #
@@ -164,7 +168,12 @@ install() {
     q -c "GRANT CREATE, CONNECT ON DATABASE \"$clone\" TO reptracker_owner, reptracker_user" || return 1
     (cd "$stage" && bash scripts/install_app.sh --postgres-url="$REPTRACKER_TEST_DB_URL") || return 1
     q -Atc "select hive.app_context_exists('$SCHEMA')" | grep -qx t || { echo "context $SCHEMA was not created"; return 1; }
-    q -Atc "select git_hash from $SCHEMA.version"
+    q -Atc "select git_hash from $SCHEMA.version" || return 1
+    check_endpoint_volatility
+}
+
+check_endpoint_volatility() {
+    q -f .aidev/endpoint_volatility_check.sql
 }
 
 current_block() {
@@ -250,6 +259,7 @@ reinstall() {
     after="$(current_block)" || return 1
     echo "synced block before $before, after $after"
     [ "$before" = "$after" ] || { echo "reinstalling over a synced schema moved its block"; return 1; }
+    check_endpoint_volatility
 }
 
 uninstall() {
