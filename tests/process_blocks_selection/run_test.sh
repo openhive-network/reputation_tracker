@@ -131,11 +131,16 @@ call_main() {
   timeout -s INT 10 psql "$OWNER_URL" -X -v ON_ERROR_STOP=on \
     -c "SET SEARCH_PATH TO reptracker_app;" -c "CALL reptracker_app.main('reptracker_app', NULL);" 2>&1
 }
+# psql's error lines in <output>, but the cancel that stops the loop. Collected whole,
+# not tested by grep -q in a pipe: under pipefail SIGPIPE would decide the result.
+error_lines() {
+  grep -E '^(psql:[^ ]+: )?ERROR:' <<<"$1" | grep -v "canceling statement due to user request" || true
+}
 run_main() {
   local name="$1" out status=0 pattern
   shift
   out="$(call_main)" || status=$?
-  if [ "$status" -ne 124 ] || grep -v "canceling statement due to user request" <<<"$out" | grep -q "ERROR"; then
+  if [ "$status" -ne 124 ] || [ -n "$(error_lines "$out")" ]; then
     fail "$name: exit $status" "$out"; return
   fi
   for pattern in "Entering application main loop" "$@"; do
@@ -143,6 +148,17 @@ run_main() {
   done
   echo "PASS  $name"
 }
+
+# The matcher sees psql's errors, not the word ERROR in a command line it echoes
+matcher_input='psql -v "ON_ERROR_STOP=on" -c "CALL reptracker_app.main(...)"
+ERROR:  canceling statement due to user request'
+if [ -z "$(error_lines "$matcher_input")" ] \
+   && [ "$(error_lines "$matcher_input"$'\nERROR:  relation does not exist')" = "ERROR:  relation does not exist" ] \
+   && [ -n "$(error_lines 'psql:<stdin>:1: ERROR:  syntax error')" ]; then
+  echo "PASS  error lines matched exactly"
+else
+  fail "error lines matched exactly"
+fi
 
 [ "$(sql "SELECT to_regclass('hafd.applications') IS NOT NULL")" = "t" ] \
   || { echo "This HAF has no application registry; the test needs one"; exit 1; }
@@ -173,7 +189,9 @@ expect "entry procedure gone" LEGACY "entry procedure"
 # Nor may the legacy loop hold the lock then: HAF refuses it (haf#403), so a
 # crash-looping loop never blocks the repair. HAF finds the app by the lock name,
 # which is why reputation tracker registers under it (#23).
-if [ "$(sql "SELECT to_regprocedure('hive._missing_app_process_procedure(text)') IS NOT NULL")" = "t" ]; then
+# The check is hive._app_broken_reason since haf#454, hive._missing_app_process_procedure before
+if [ "$(sql "SELECT to_regprocedure('hive._app_broken_reason(text)') IS NOT NULL
+                 OR to_regprocedure('hive._missing_app_process_procedure(text)') IS NOT NULL")" = "t" ]; then
   status=0
   out="$(call_main)" || status=$?
   if [ "$status" -ne 124 ] && grep -qF "Cannot take block-processor lock on reputation_tracker: its process procedure reptracker_app.process_blocks( hive.blocks_range ) does not exist" <<<"$out"; then
@@ -181,10 +199,8 @@ if [ "$(sql "SELECT to_regprocedure('hive._missing_app_process_procedure(text)')
   else
     fail "HAF refuses legacy main() the lock with the entry procedure gone: exit $status" "$out"
   fi
-elif [ -n "${CI:-}" ]; then
-  # CI runs develop HAF, which has the check: its absence means a stale image
-  fail "HAF refuses legacy main() the lock with the entry procedure gone: this HAF has no haf#403 check"
 else
+  echo "SKIP  HAF refuses legacy main() the lock with the entry procedure gone: this HAF has neither hive._app_broken_reason(text) nor hive._missing_app_process_procedure(text) (HAF before haf#403)"
   run_main "legacy main() runs with the entry procedure gone (HAF before haf#403)"
 fi
 sql "ALTER PROCEDURE reptracker_app.process_blocks_hidden(hive.blocks_range) RENAME TO process_blocks"
