@@ -6,7 +6,8 @@ set -o pipefail
 SCRIPTDIR="$( cd -- "$(dirname "$0")" >/dev/null 2>&1 || exit 1; pwd -P )"
 
 # Fetch process_openapi.py from common-ci-configuration if not available locally
-COMMON_CI_REF="${COMMON_CI_REF:-develop}"
+# The first revision that also writes rpc_arguments.lua, the argument map of hive.rpc_form
+COMMON_CI_REF="${COMMON_CI_REF:-1d952fd19118762d0e66f91953e194ff08e69bb0}"
 COMMON_CI_URL="${COMMON_CI_URL:-https://gitlab.syncad.com/hive/common-ci-configuration/-/raw/${COMMON_CI_REF}}"
 PROCESS_OPENAPI="${SCRIPTDIR}/process_openapi.py"
 
@@ -18,6 +19,7 @@ fi
 endpoints="endpoints"
 rewrite_dir="${endpoints}_openapi"
 input_file="rewrite_rules.conf"
+rpc_arguments_file="rpc_arguments.lua"
 temp_output_file=$(mktemp)
 
 # Default directories with fixed order if none provided
@@ -108,4 +110,6 @@ rm -rf "$SCRIPTDIR/output"
 reverse_lines > "$temp_output_file"
 mv "$temp_output_file" "$SCRIPTDIR/../$rewrite_dir/$input_file"
 rm "$input_file"
+# The argument map the rewriter's hive.rpc_form module takes, beside the rewrite rules
+mv "$rpc_arguments_file" "$SCRIPTDIR/../$rewrite_dir/$rpc_arguments_file"
 echo "Rewritten scripts saved in $rewrite_dir"

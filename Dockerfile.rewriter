@@ -1,6 +1,8 @@
-FROM registry.gitlab.syncad.com/hive/common-ci-configuration/nginx:latest
+# The first nginx image that ships the hive.rpc_form module
+FROM registry.gitlab.syncad.com/hive/common-ci-configuration/nginx:1d952fd19118762d0e66f91953e194ff08e69bb0
 COPY docker/reputation_tracker_nginx.conf.template /usr/local/openresty/nginx/conf/nginx.conf.template
 COPY endpoints/rewrite_rules.conf /usr/local/openresty/nginx/conf/rewrite_rules.conf
+COPY endpoints/rpc_arguments.lua /usr/local/openresty/nginx/conf/rpc_arguments.lua
 COPY docker/rewriter_entrypoint.sh /entrypoint.sh
 
 CMD ["/entrypoint.sh"]

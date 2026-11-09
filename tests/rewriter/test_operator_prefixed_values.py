@@ -14,7 +14,7 @@ import pytest
 
 from common import direct_post, postgrest_code, via_rewriter
 
-VALUES = ["not.existing", "eq.blocktrades", "in.(gtg)", "like.gtg*", "is.null", "fts.gtg"]
+VALUES = ["not.existing", "not.blocktrades", "eq.blocktrades", "in.(gtg)", "like.gtg*", "is.null", "fts.gtg"]
 
 PATH_ROUTE = "/accounts/{v}/reputation"
 CATCH_ALL_ROUTE = "/get_account_reputation"
@@ -28,7 +28,7 @@ def _get(route, value):
 
 @pytest.mark.parametrize("value", VALUES)
 @pytest.mark.parametrize("route", [PATH_ROUTE, CATCH_ALL_ROUTE])
-def test_value_reaches_function_verbatim(route, value):
+def test_value_reaches_function_verbatim(route, value) -> None:
     got = _get(route, value)
     want = direct_post("get_account_reputation", {"account-name": value})
     # The oracle itself must have called the function with the argument.
@@ -38,7 +38,7 @@ def test_value_reaches_function_verbatim(route, value):
 
 @pytest.mark.parametrize("value", VALUES)
 @pytest.mark.parametrize("route", [PATH_ROUTE, CATCH_ALL_ROUTE])
-def test_value_arrives_unchanged(route, value):
+def test_value_arrives_unchanged(route, value) -> None:
     """An unknown account is answered with its name, so the value the function received is
     visible: as a path segment and as a query parameter (the catch-all route)."""
     status, body = _get(route, value)
@@ -46,7 +46,7 @@ def test_value_arrives_unchanged(route, value):
     assert body.get("message") == f"Account '{value}' does not exist", (status, body)
 
 
-def test_encoded_characters_arrive_unchanged():
+def test_encoded_characters_arrive_unchanged() -> None:
     """`+`, `%`, `&`, `=` and a space in a value are each encoded once by the client; the
     rewriter must forward the encoded part as is, neither decoding it nor encoding it again.
     Catch-all route only: a path segment is decoded by nginx before the rewrite rule copies
@@ -58,7 +58,7 @@ def test_encoded_characters_arrive_unchanged():
 
 
 @pytest.mark.parametrize("route", [PATH_ROUTE, CATCH_ALL_ROUTE])
-def test_ordinary_account_unchanged(route):
+def test_ordinary_account_unchanged(route) -> None:
     got = _get(route, "blocktrades")
     assert got[0] == 200 and isinstance(got[1], int), got
     assert got == direct_post("get_account_reputation", {"account-name": "blocktrades"})
