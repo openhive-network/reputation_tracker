@@ -13,7 +13,8 @@ AIDEV's running work is based on it. GitLab CI doesn't run for AIDEV branches
 
 `.aidev/run-checks.sh <suite> <step>...` runs the named steps and writes
 `test-results/<suite>/junit.xml`, one test case per step, with the step's log tail as
-the failure body. `tavern` also writes one case per test (`tavern.xml`).
+the failure body. `tavern` and `rewriter` also write one case per test (`tavern.xml`,
+`rewriter.xml`). A step that exits 77 is reported skipped, its log's last line the reason.
 
 | Step | What |
 |---|---|
@@ -23,6 +24,7 @@ the failure body. `tavern` also writes one case per test (`tavern.xml`).
 | `sync` | the candidate's own block processing over the clone's 5,000,000 blocks, run as `scripts/process_blocks.sh` runs it in the production image (`haf_app_driver.py --app=reptracker_app --lock=reputation_tracker --stop-at-block=5000000`, as `reptracker_owner`), then `ANALYZE`; then `permlinks` must carry its insert-only autovacuum reloptions and have no vacuum request, and `finish_initial_sync()` (in a rolled-back transaction) must request one `'freeze'` vacuum per table, or none on a HAF without request kinds |
 | `regression` | `tests/regression` (CI's `regression-test`): every account's reputation at block 5,000,000 against hived's `reputation_api.get_account_reputations` dump `accounts_dump.json.gz`; no account may differ. The dump is loaded server-side (one `COPY`, then `reptracker_account_dump.dump_current_account_stats` per row in one statement) instead of by `data_insertion_script.py`'s one round trip per account |
 | `tavern` | `.aidev/reptracker_tavern.py`: the tavern pattern tests `tests/tavern` (CI's `pattern-test`) against PostgREST over the clone, configured as `docker/docker-compose.yml`'s `backend-postgrest` (schema `reptracker_endpoints`, anonymous role `reptracker_user`, extra search path `reptracker_app`), 4 xdist workers, run from a copy in `test-results/<suite>/tavern/` (the comparator writes each answer beside its test) |
+| `rewriter` | `.aidev/reptracker_rewriter.py`: `tests/rewriter` (CI's `rewriter-test`) through the candidate's rewriter in front of PostgREST over the clone, 4 xdist workers. First `scripts/openapi_rewrite.sh` runs in a scratch copy and must regenerate the committed `endpoints/rewrite_rules.conf` and `endpoints/rpc_arguments.lua` (the files `Dockerfile.rewriter` copies, as CI's image build does). The checks have no docker daemon (below), so the image is assembled rather than built: `Dockerfile.rewriter`'s `FROM` must be the base the runtime image carries, its `COPY` lines are applied to a scratch tree, and its `CMD` (`docker/rewriter_entrypoint.sh`) runs with `/usr/local/openresty/` pointed at that tree, starting the base's OpenResty through its musl loader; the rendered template's `listen` ports and its `reputation-tracker-postgrest:3000` upstream move to loopback. Any other instruction fails the step. The rewriter's output is `rewriter-nginx.log`. Skipped, with the reason, on a runtime image without that base |
 | `reinstall` | `scripts/install_app.sh` again over the installed, synced schema — an upgrade in place, as CI's `setup-scripts-test` — and the synced block must not move; the volatility check runs again |
 | `uninstall` | `scripts/uninstall_app.sh` (without its role statements), the leftover `reptracker_endpoints`/`reptracker_backend` schemas dropped, the context and the three schemas checked gone, then `install` again from scratch (CI's `setup-scripts-test`) |
 
@@ -33,7 +35,7 @@ checkout has no usable git), because a workflow checkout may have no `.git`.
 | Slot | Steps | Shared HAF |
 |---|---|---|
 | quick, coverage | shellcheck, sql-registered | no |
-| full, canary | those plus install, sync, regression, tavern, reinstall, uninstall | yes |
+| full, canary | those plus install, sync, regression, tavern, rewriter, reinstall, uninstall | yes |
 | baseline | install, sync, regression, tavern | yes |
 
 `static` and `system` are unbound: AIDEV runs neither for a project.
@@ -93,7 +95,7 @@ docker build --build-arg BASE_IMAGE="$base" -f .aidev/runtime/Dockerfile -t rept
 image=reptracker-checks
 docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/w" -w /w \
     -e AIDEV_EXTERNAL_HAF_HOST=<host> -e AIDEV_EXTERNAL_HAF_PORT=<port> "$image" \
-    .aidev/run-checks.sh full shellcheck sql-registered install sync regression tavern reinstall uninstall
+    .aidev/run-checks.sh full shellcheck sql-registered install sync regression tavern rewriter reinstall uninstall
 ```
 
 ## The test runtime image (`runtime/`)
@@ -105,9 +107,17 @@ image `environment.base` follows: hive/common-ci-configuration's
 `shellcheck`, `postgrest`, `tavern`, `pytest`, `pytest-xdist` and `psycopg2`
 at the versions common-ci-configuration's `docker-bake.hcl` defines; the Dockerfile pins
 no tool version and adds only hive/tests_api (`validate_response`, the tavern tests'
-comparator) at `TESTS_API_COMMIT` and `haf_app_driver.py` from
-hive/common-ci-configuration at `DRIVER_COMMIT` (checksum-pinned). Nothing is installed
-at run time.
+comparator) at `TESTS_API_COMMIT`, `haf_app_driver.py` from
+hive/common-ci-configuration at `DRIVER_COMMIT` (checksum-pinned), and the `rewriter`
+step's tools: the filesystem of `REWRITER_BASE` (the image `Dockerfile.rewriter` builds
+on) at `/opt/rewriter`, and `process_openapi.py` at `PROCESS_OPENAPI_COMMIT`
+(checksum-pinned, with `deepmerge` and `jsonpointer`). Nothing is installed at run time.
+
+The slot container gets no docker socket, so the `rewriter` step cannot build
+`Dockerfile.rewriter`. When a change moves `Dockerfile.rewriter`'s `FROM` or
+`scripts/openapi_rewrite.sh`'s `COMMON_CI_REF`, the step fails naming the argument here
+to move with it (`REWRITER_BASE`, `PROCESS_OPENAPI_COMMIT`; a new `process_openapi.py`
+also needs its checksum).
 
 AIDEV resolves the followed tag before every run and rebuilds the runtime when that tag
 or the Dockerfile moves, so a tool upgrade in common-ci-configuration reaches these
