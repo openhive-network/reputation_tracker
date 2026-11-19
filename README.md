@@ -113,7 +113,7 @@ Votes are processed in blockchain order (critical requirement). Each vote's effe
 | Function | File | Purpose |
 |----------|------|---------|
 | `reptracker_block_range_data()` | `db/process_block_range.sql` | Main processing CTE chain |
-| `calculate_account_reputations()` | `db/calculate_account_reputations.sql` | Per-vote reputation calculation |
+| `calculate_account_reputations()` | `db/calculate_account_reputations.sql` | Ordered reputation calculation over a batch of votes |
 | `process_effective_vote_operation()` | `backend/operation_parsers/vote_operations.sql` | Parse vote JSON |
 | `main()` | `db/reptracker_app.sql` | Processing entry point |
 
