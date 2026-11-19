@@ -31,11 +31,11 @@ Reputation processing follows a multi-phase pipeline that extracts vote operatio
 │  Phase 6: active_votes updates                                              │
 │     DELETE canceled votes, UPSERT new votes                                 │
 │                              ↓                                              │
-│  Phase 7: materialize_votes                                                 │
-│     Insert into temp table for sequential processing                        │
+│  Phase 7: votes_to_process                                                  │
+│     array_agg the batch's votes in source_op order                          │
 │                              ↓                                              │
-│  SEQUENTIAL LOOP: calculate_account_reputations()                           │
-│     Process each vote in blockchain order                                   │
+│  calculate_account_reputations(arrays)                                      │
+│     Apply each vote in order in memory, one upsert for the batch            │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -79,7 +79,23 @@ When a post is deleted or paid out:
 
 ## Reputation Calculation Algorithm
 
-Located in `db/calculate_account_reputations.sql`:
+Located in `db/calculate_account_reputations.sql`. One call per block range: it takes the
+range's votes as four parallel arrays in `source_op` order (`author_ids`, `voter_ids`,
+`rshares`, `prev_rshares`), reads the reputation of every account they touch from
+`account_reputations` once into plpgsql arrays (accounts indexed densely, votes refer to
+them by index), applies the rules below vote by vote against those arrays, then upserts
+the accounts a vote changed in one statement (skipping rows whose final state equals the
+stored one). The per-vote cost is plpgsql array reads and writes instead of a lookup and an
+upsert per vote. It runs with `plan_cache_mode = force_custom_plan`: a generic plan
+estimates `unnest()` of an array parameter at a few rows and nested-loops its joins over
+the batch's tens of thousands of votes.
+
+`reptracker_block_range_data()` also runs with `plan_cache_mode = force_custom_plan`. A
+generic plan of its CTE chain, cached early in a sync while `active_votes` is small, is
+never invalidated during the long `main()` session (no ANALYZE runs on its tables while it
+holds them, and nothing else touches their definitions), so later batches ran on it at
+10-20 s per 10,000 blocks instead of under 1 s. Phase 1b reads the parsed row's fields from
+an `OFFSET 0` subquery column: `(CASE ... END).*` would call the parser once per field.
 
 ### Scaling Formula
 
@@ -180,7 +196,7 @@ The install opts the context in with `hive.app_context_set_early_block_processin
 | Function | Location | Purpose |
 |----------|----------|---------|
 | `reptracker_block_range_data()` | `db/process_block_range.sql` | Main CTE chain - processes block range |
-| `calculate_account_reputations()` | `db/calculate_account_reputations.sql` | Per-vote reputation calculation |
+| `calculate_account_reputations()` | `db/calculate_account_reputations.sql` | Ordered reputation calculation over a batch of votes |
 
 ### Operation Parsers
 
@@ -223,7 +239,7 @@ Votes **must** be processed in blockchain order (by `source_op`) because:
 - If Alice's downvote processed first: Alice has lower rep, downvote might be ignored
 - If Carol's upvote processed first: Alice has higher rep, downvote may count
 
-The temp table `_votes_to_process` collects all votes, then a FOR LOOP processes them in `source_op` order.
+`reptracker_block_range_data()` aggregates the range's votes into arrays ordered by `source_op`, and `calculate_account_reputations()` applies them in that order against in-memory copies of the affected accounts' reputations.
 
 ## Expansion Rules
 

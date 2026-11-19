@@ -11,12 +11,19 @@ VOLATILE
 SET from_collapse_limit = 16
 SET join_collapse_limit = 16
 SET jit = OFF
+-- Plan the CTE chain on every call: a generic plan cached early in a sync keeps the
+-- estimates of the then-small active_votes for the rest of the session, as nothing
+-- invalidates it while the sync runs.
+SET plan_cache_mode = force_custom_plan
 AS $BODY$
 DECLARE
   __rep_change INT := 0;
   __delete_votes INT;
   __upsert_votes INT;
-  __vote_rec RECORD;
+  __author_ids INT[];
+  __voter_ids INT[];
+  __rshares BIGINT[];
+  __prev_rshares BIGINT[];
 
   -- Operation type IDs (cached to avoid repeated function calls during query execution)
   -- These map to hafd.operation_types entries for vote-related operations
@@ -24,21 +31,6 @@ DECLARE
   __op_delete INT := reptracker_backend.op_delete_comment();          -- Post deleted
   __op_payout INT := reptracker_backend.op_comment_payout_update();   -- Post paid out (votes finalized)
 BEGIN
-
---=====================================================================================
--- TEMP TABLE: Storage for reputation changes to process sequentially
---=====================================================================================
--- Reputation must be calculated in blockchain order (by source_op) because each vote's
--- effect depends on the voter's current reputation at that moment. Batch UPDATE would
--- process in arbitrary order, causing incorrect results.
-CREATE TEMP TABLE IF NOT EXISTS _votes_to_process (
-  author_id INT,
-  voter_id INT,
-  rshares BIGINT,
-  prev_rshares BIGINT,
-  source_op BIGINT        -- Operation ID determines processing order
-) ON COMMIT DROP;
-TRUNCATE _votes_to_process;
 
 --=====================================================================================
 -- MAIN CTE CHAIN: Extract, transform, and load vote operations
@@ -70,26 +62,28 @@ operations_in_range AS MATERIALIZED (
 -- CROSS JOIN LATERAL parses each operation's JSONB body_value.
 -- Inline CASE avoids wrapper function overhead (process_vote_impacting_operations).
 -- MATERIALIZED prevents multiple scans that would re-execute JSON parsing.
+-- The parsed row is a column of an OFFSET 0 subquery and its fields are read from
+-- there: `(CASE ... END).*` would expand into one CASE, so one parser call, per field.
 vote_operations_raw AS MATERIALIZED (
   SELECT
-    ev.author,
-    ev.voter,
-    ev.permlink,
-    ev.rshares,
+    (p.ev).author,
+    (p.ev).voter,
+    (p.ev).permlink,
+    (p.ev).rshares,
     ov.op_type_id,
     ov.source_op
   FROM operations_in_range ov
   CROSS JOIN LATERAL (
-    SELECT (
+    SELECT
       CASE
         WHEN ov.op_type_id = __op_vote THEN
           reptracker_backend.process_effective_vote_operation(ov.body_value)
         ELSE
           -- Delete and payout operations share same parser (only need author/permlink)
           reptracker_backend.process_deleted_comment_operation(ov.body_value)
-      END
-    ).*
-  ) AS ev
+      END AS ev
+    OFFSET 0
+  ) AS p
 ),
 
 -----------------------------------------------------------------------------------
@@ -349,38 +343,46 @@ upsert_votes AS (
 ),
 
 -----------------------------------------------------------------------------------
--- PHASE 7: Materialize reputation changes for sequential processing
+-- PHASE 7: Collect reputation changes, in blockchain order, for the batch calculation
 -----------------------------------------------------------------------------------
-materialize_votes AS (
-  INSERT INTO _votes_to_process (author_id, voter_id, rshares, prev_rshares, source_op)
-  SELECT author_id, voter_id, rshares, prev_rshares, source_op
+votes_to_process AS (
+  SELECT
+    array_agg(author_id ORDER BY source_op) AS author_ids,
+    array_agg(voter_id ORDER BY source_op) AS voter_ids,
+    array_agg(rshares ORDER BY source_op) AS rshares,
+    array_agg(prev_rshares ORDER BY source_op) AS prev_rshares,
+    count(*) AS vote_count
   FROM check_if_prev_balances_canceled
-  RETURNING 1
 )
 
 -- Execute all CTEs and capture counts for debugging/logging
 SELECT
   (SELECT count(*) FROM delete_votes),
   (SELECT count(*) FROM upsert_votes),
-  (SELECT count(*) FROM materialize_votes)
-INTO __delete_votes, __upsert_votes, __rep_change;
+  vtp.vote_count,
+  vtp.author_ids,
+  vtp.voter_ids,
+  vtp.rshares,
+  vtp.prev_rshares
+INTO __delete_votes, __upsert_votes, __rep_change, __author_ids, __voter_ids, __rshares, __prev_rshares
+FROM votes_to_process vtp;
 
 --=====================================================================================
--- SEQUENTIAL REPUTATION PROCESSING
+-- REPUTATION PROCESSING
 --=====================================================================================
--- Reputation changes MUST be processed in blockchain order (by source_op).
+-- Reputation changes MUST be applied in blockchain order (by source_op).
 -- Each vote's effect depends on the voter's reputation at that moment.
 -- Example: If Alice downvotes Bob, then Carol upvotes Alice, the order matters:
 --   - If Alice's downvote processed first: Alice has low rep, downvote might be ignored
 --   - If Carol's upvote processed first: Alice has higher rep, downvote counts
-FOR __vote_rec IN (SELECT * FROM _votes_to_process ORDER BY source_op) LOOP
-  PERFORM reptracker_backend.calculate_account_reputations(
-    __vote_rec.author_id,
-    __vote_rec.voter_id,
-    __vote_rec.rshares,
-    __vote_rec.prev_rshares
-  );
-END LOOP;
+-- calculate_account_reputations applies the ordered arrays in memory and writes the
+-- changed accounts back in one statement.
+PERFORM reptracker_backend.calculate_account_reputations(
+  __author_ids,
+  __voter_ids,
+  __rshares,
+  __prev_rshares
+);
 
 END
 $BODY$;
