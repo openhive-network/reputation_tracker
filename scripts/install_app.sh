@@ -126,6 +126,10 @@ install_schema() {
   # Block processing logic
   psql "$POSTGRES_ACCESS" -v ON_ERROR_STOP=on -c "SET SEARCH_PATH TO ${REPTRACKER_SCHEMA};" -f "$SRCPATH/db/process_block_range.sql"
 
+  # Partial op_type index on hafd.operations, built by HAF (needs operation_types.sql);
+  # registered before the context processes blocks, so HAF builds it at its LIVE entry
+  psql "$POSTGRES_ACCESS" -v ON_ERROR_STOP=on -c "SET ROLE reptracker_owner; SET SEARCH_PATH TO ${REPTRACKER_SCHEMA};" -c "SELECT register_rep_indexes('${REPTRACKER_SCHEMA}');"
+
   # Version injection
   psql "$POSTGRES_ACCESS" -v ON_ERROR_STOP=on -c "SET SEARCH_PATH TO ${REPTRACKER_SCHEMA};" -f "$SRCPATH/scripts/set_version_in_sql.pgsql"
 

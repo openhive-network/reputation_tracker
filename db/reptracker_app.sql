@@ -240,16 +240,40 @@ END
 $$;
 
 /**
+ * does_haf_build_rep_indexes()
+ * ----------------------------
+ * @returns TRUE on a HAF with hive.register_op_type_partial_index() (haf#510): HAF
+ *          builds the partial op_type index registered by register_rep_indexes(),
+ *          never the application. FALSE on an older HAF, where the application
+ *          builds it with create_rep_indexes().
+ */
+CREATE OR REPLACE FUNCTION does_haf_build_rep_indexes()
+RETURNS BOOLEAN
+LANGUAGE 'plpgsql' STABLE
+AS
+$$
+BEGIN
+  RETURN EXISTS (
+    SELECT 1 FROM pg_proc p
+    JOIN pg_namespace n ON p.pronamespace = n.oid
+    WHERE n.nspname = 'hive' AND p.proname = 'register_op_type_partial_index'
+  );
+END
+$$;
+
+/**
  * do_rep_indexes_exist()
  * ----------------------
- * Check if the partial op_type index for reputation tracker exists and is valid.
- * The index is created by db/create_indexes.sql via hive.create_op_type_partial_index().
+ * Check if the partial op_type index for reputation tracker is in place.
  * Index name convention: hive_operations_op_types_{id1}_{id2}_{id3}_idx (sorted IDs).
  *
  * Returns TRUE if:
- *   - hive.create_op_type_partial_index() is not available (older HAF, no index needed)
- *   - The partial index exists and is valid
- * Returns FALSE if the function exists but the index is missing or invalid.
+ *   - neither hive.register_op_type_partial_index() nor hive.create_op_type_partial_index()
+ *     is available (older HAF, no index needed)
+ *   - the partial index exists and is valid
+ *   - HAF builds the index (does_haf_build_rep_indexes()) and it is registered in
+ *     hafd.indexes_constraints, built or not: block processing reads correctly without it
+ * Returns FALSE if the index is missing or invalid and, on a HAF that builds it, not registered.
  */
 CREATE OR REPLACE FUNCTION do_rep_indexes_exist()
 RETURNS BOOLEAN
@@ -259,9 +283,10 @@ $$
 DECLARE
   __expected_name TEXT;
   __op_ids SMALLINT[];
+  __haf_builds BOOLEAN := does_haf_build_rep_indexes();
 BEGIN
   -- If the HAF function doesn't exist, indexes aren't applicable
-  IF NOT EXISTS (
+  IF NOT __haf_builds AND NOT EXISTS (
     SELECT 1 FROM pg_proc p
     JOIN pg_namespace n ON p.pronamespace = n.oid
     WHERE n.nspname = 'hive' AND p.proname = 'create_op_type_partial_index'
@@ -278,6 +303,13 @@ BEGIN
 
   __expected_name := 'hive_operations_op_types_' || array_to_string(__op_ids, '_') || '_idx';
 
+  IF __haf_builds AND EXISTS (
+    SELECT 1 FROM hafd.indexes_constraints
+    WHERE table_name = 'hafd.operations' AND index_constraint_name = __expected_name
+  ) THEN
+    RETURN TRUE;
+  END IF;
+
   -- Check the index exists and is valid
   RETURN EXISTS (
     SELECT 1
@@ -290,13 +322,57 @@ END
 $$;
 
 /**
+ * register_rep_indexes()
+ * ----------------------
+ * Register with HAF the partial index on hafd.operations covering only the 3
+ * operation types used by reputation_tracker (hive.register_op_type_partial_index,
+ * haf#510). The application never builds it: registered before HAF leaves its
+ * massive sync, HAF builds it at its LIVE entry; registered later, hived builds it
+ * CONCURRENTLY. Registering it again changes nothing.
+ *
+ * Called by scripts/install_app.sh at every install and reinstall. On an older HAF
+ * it does nothing but raise a NOTICE, and the LIVE stage builds the index with
+ * create_rep_indexes(). It also does nothing, with a NOTICE, while hived has not
+ * filled hafd.operation_types yet.
+ *
+ * @param _context_name  HAF context name (the schema name)
+ */
+CREATE OR REPLACE FUNCTION register_rep_indexes(_context_name TEXT)
+RETURNS VOID
+LANGUAGE 'plpgsql' VOLATILE
+AS
+$$
+DECLARE
+  _op_ids SMALLINT[];
+BEGIN
+  IF NOT does_haf_build_rep_indexes() THEN
+    RAISE NOTICE 'HAF has no hive.register_op_type_partial_index() — context % builds its partial index on hafd.operations at its LIVE entry', _context_name;
+    RETURN;
+  END IF;
+
+  _op_ids := reptracker_backend.get_reptracker_op_type_ids();
+
+  IF _op_ids IS NULL OR array_length(_op_ids, 1) != 3 THEN
+    RAISE NOTICE 'Expected 3 operation types in hafd.operation_types, found: %. Index not registered: reinstall once hived has started', _op_ids;
+    RETURN;
+  END IF;
+
+  RAISE NOTICE 'Registering partial index for reptracker op types: %', _op_ids;
+  PERFORM hive.register_op_type_partial_index(_context_name, _op_ids);
+END
+$$;
+
+/**
  * create_rep_indexes()
  * --------------------
  * Create partial index on hafd.operations covering only the 3 operation types
  * used by reputation_tracker. This makes the index ~97% smaller than a full index
  * and dramatically speeds up block processing queries.
  *
- * Called once at the MASSIVE_PROCESSING → LIVE stage transition.
+ * Fallback for a HAF without hive.register_op_type_partial_index(): called once at
+ * the MASSIVE_PROCESSING → LIVE stage transition, it builds the index with a
+ * non-concurrent CREATE INDEX. A HAF that has the registered path builds the index
+ * itself (register_rep_indexes()), and block processing never calls this function.
  * Requires HAF with hive.create_op_type_partial_index().
  * On older HAF versions, gracefully does nothing.
  */
@@ -629,13 +705,16 @@ BEGIN
         END IF;
 
         -- An early-processing context can reach the LIVE stage near the end of HAF's
-        -- massive sync, before HAF has restored its indexes: the freeze vacuums and the
-        -- CREATE INDEX on hafd.operations, which blocks hived's inserts, wait for HAF
+        -- massive sync, before HAF has restored its indexes: the freeze vacuums and,
+        -- on a HAF that does not build the partial index itself, the CREATE INDEX on
+        -- hafd.operations, which blocks hived's inserts, wait for HAF
         IF NOT is_initial_sync_finished() AND hive.is_instance_ready() THEN
           PERFORM finish_initial_sync('%s');
         END IF;
 
-        IF NOT do_rep_indexes_exist() AND hive.is_instance_ready() THEN
+        -- A HAF that builds the registered index may not have built it yet; block
+        -- processing reads correctly without it
+        IF NOT does_haf_build_rep_indexes() AND NOT do_rep_indexes_exist() AND hive.is_instance_ready() THEN
           PERFORM create_rep_indexes();
         END IF;
         CALL reptracker_single_processing(_block_range.first_block, _block_range.last_block, _logs);
