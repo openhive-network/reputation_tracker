@@ -10,28 +10,27 @@ Reputation processing follows a multi-phase pipeline that extracts vote operatio
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                         BLOCK RANGE PROCESSING                              │
 ├─────────────────────────────────────────────────────────────────────────────┤
+│  Permlinks: INSERT the batch's new permlinks (own statement)                │
+│                              ↓                                              │
 │  Phase 1a: operations_in_range                                              │
 │     Filter vote-related operations (types 72, 17, 61)                       │
 │                              ↓                                              │
 │  Phase 1b: vote_operations_raw                                              │
 │     Parse JSON bodies → (author, voter, permlink, rshares)                  │
 │                              ↓                                              │
-│  Phase 2: account_ids                                                       │
-│     Resolve account names → integer IDs (per-name index probe)              │
+│  Phase 2: vote_operations                                                   │
+│     Names, permlinks → integer IDs (index probe per operation)              │
 │                              ↓                                              │
-│  Phase 3: permlink dictionary                                               │
-│     Insert new permlinks, fetch IDs for all                                 │
+│  Phase 3: ranked_data                                                       │
+│     Window functions: latest op, previous vote, deletes/payouts per post    │
 │                              ↓                                              │
-│  Phase 4: ranked_data                                                       │
-│     Find previous votes (ROW_NUMBER + self-join)                            │
-│                              ↓                                              │
-│  Phase 5: check_if_prev_balances_canceled                                   │
+│  Phase 4: check_if_prev_balances_canceled                                   │
 │     Handle delete operations between votes                                  │
 │                              ↓                                              │
-│  Phase 6: active_votes updates                                              │
+│  Phase 5: active_votes updates                                              │
 │     DELETE canceled votes, UPSERT new votes                                 │
 │                              ↓                                              │
-│  Phase 7: votes_to_process                                                  │
+│  Phase 6: votes_to_process                                                  │
 │     array_agg the batch's votes in source_op order                          │
 │                              ↓                                              │
 │  calculate_account_reputations(arrays)                                      │
@@ -96,6 +95,22 @@ never invalidated during the long `main()` session (no ANALYZE runs on its table
 holds them, and nothing else touches their definitions), so later batches ran on it at
 10-20 s per 10,000 blocks instead of under 1 s. Phase 1b reads the parsed row's fields from
 an `OFFSET 0` subquery column: `(CASE ... END).*` would call the parser once per field.
+
+No join in the chain is between two of its CTEs, so no row estimate can make it quadratic.
+The `operations_view` estimate for a range can be 75x low (blocks 2,889,001-2,899,000 hold
+35k `comment_payout_update` operations, the first payout of every post), and joins of the
+operations against CTEs then planned as nested loops rescanning a CTE per operation,
+stalling a 10,000-block batch for 45+ minutes. Instead:
+- account names and permlinks resolve by a lateral `LIMIT 1` index probe per operation
+  against `accounts_view` and `permlinks`; the batch's new permlinks are inserted by a
+  statement of its own before the chain, since rows a data-modifying CTE inserts are not
+  visible to the rest of its statement;
+- `ranked_data` computes, with window functions instead of self-joins, the previous vote of
+  the same (author, voter, permlink) in the batch (`LEAD`), and per (author, permlink) the
+  latest delete/payout at or before each operation (`last_delete_source_op`: one at or after
+  the previous vote cancels it) and the batch's latest one (`final_delete_source_op`: one
+  after the voter's last vote means the vote is not upserted).
+The remaining joins are against `active_votes`, through its primary key.
 
 ### Scaling Formula
 
