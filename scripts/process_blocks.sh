@@ -178,6 +178,11 @@ process_blocks() {
                 echo "${REPTRACKER_SCHEMA} is registered in the HAF application registry as ${app_name}; running haf_app_driver.py"
                 local limit_arg=()
                 [ "$n_blocks" != "null" ] && limit_arg=(--stop-at-block="$n_blocks")
+                # The driver only calls process_blocks per range, where the processing role
+                # may not register indexes: main() does this at its start for the legacy loop
+                psql "$POSTGRES_ACCESS" -X -w -q -v ON_ERROR_STOP=on -c "SET SEARCH_PATH TO ${REPTRACKER_SCHEMA};" \
+                    -c "SELECT ${REPTRACKER_SCHEMA}.register_missing_rep_indexes('${REPTRACKER_SCHEMA}');" >/dev/null \
+                    || echo "WARNING: could not check that the partial index on hafd.operations is registered with HAF; starting block processing anyway"
                 exec haf_app_driver.py --app="${app_name}" --postgres-url="$POSTGRES_ACCESS" --lock=reputation_tracker "${limit_arg[@]}"
                 ;;
             noentry)
