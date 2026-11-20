@@ -333,7 +333,8 @@ $$;
  * Called by scripts/install_app.sh at every install and reinstall. On an older HAF
  * it does nothing but raise a NOTICE, and the LIVE stage builds the index with
  * create_rep_indexes(). It also does nothing, with a NOTICE, while hived has not
- * filled hafd.operation_types yet.
+ * filled hafd.operation_types yet: the next start of block processing registers it
+ * (register_missing_rep_indexes()).
  *
  * @param _context_name  HAF context name (the schema name)
  */
@@ -353,12 +354,51 @@ BEGIN
   _op_ids := reptracker_backend.get_reptracker_op_type_ids();
 
   IF _op_ids IS NULL OR array_length(_op_ids, 1) != 3 THEN
-    RAISE NOTICE 'Expected 3 operation types in hafd.operation_types, found: %. Index not registered: reinstall once hived has started', _op_ids;
+    RAISE NOTICE 'Expected 3 operation types in hafd.operation_types, found: %. Index not registered: block processing registers it at its next start once hived has started', _op_ids;
     RETURN;
   END IF;
 
   RAISE NOTICE 'Registering partial index for reptracker op types: %', _op_ids;
   PERFORM hive.register_op_type_partial_index(_context_name, _op_ids);
+END
+$$;
+
+/**
+ * register_missing_rep_indexes()
+ * ------------------------------
+ * Register the partial index with register_rep_indexes() when an install skipped it
+ * (hafd.operation_types still empty), on a HAF that builds registered indexes and
+ * where the index is neither registered nor built. Called once at each start of block
+ * processing: at the start of main(), and by scripts/process_blocks.sh before it
+ * starts haf_app_driver.py. Never from per-block processing.
+ *
+ * Raises a WARNING, without failing, when the index is still missing: hived has not
+ * filled hafd.operation_types yet, or the caller cannot impersonate the context owner.
+ * Does nothing on an older HAF, where the LIVE stage builds the index.
+ *
+ * @param _context_name  HAF context name (the schema name)
+ */
+CREATE OR REPLACE FUNCTION register_missing_rep_indexes(_context_name TEXT)
+RETURNS VOID
+LANGUAGE 'plpgsql' VOLATILE
+AS
+$$
+DECLARE
+  __reason TEXT := 'hafd.operation_types lacks its operation types';
+BEGIN
+  IF NOT does_haf_build_rep_indexes() OR do_rep_indexes_exist() THEN
+    RETURN;
+  END IF;
+
+  BEGIN
+    PERFORM register_rep_indexes(_context_name);
+  EXCEPTION WHEN insufficient_privilege THEN
+    __reason := SQLERRM;
+  END;
+
+  IF NOT do_rep_indexes_exist() THEN
+    RAISE WARNING 'The partial index on hafd.operations for context % is not registered with HAF (%), so HAF never builds it and block processing reads hafd.operations without it. Reinstall reputation_tracker once hived has filled hafd.operation_types, or start block processing as the context owner', _context_name, __reason;
+  END IF;
 END
 $$;
 
@@ -594,10 +634,11 @@ $$;
  * Called by scripts/process_blocks.sh to begin syncing.
  *
  * Behavior:
- * 1. Enables processing via allowProcessing()
- * 2. Enters infinite loop calling hive.app_next_iteration()
- * 3. Processes each block range via reptracker_process_blocks()
- * 4. Exits when continueProcessing() returns FALSE
+ * 1. Registers the partial index if an install skipped it (register_missing_rep_indexes())
+ * 2. Enables processing via allowProcessing()
+ * 3. Enters infinite loop calling hive.app_next_iteration()
+ * 4. Processes each block range via reptracker_process_blocks()
+ * 5. Exits when continueProcessing() returns FALSE
  *
  * To stop: Call stopProcessing() from another session and commit.
  *
@@ -623,6 +664,8 @@ BEGIN
   ELSE
     RAISE WARNING 'This HAF has no hive.acquire_app_block_processor_locks; processing blocks without the reputation_tracker application lock';
   END IF;
+
+  PERFORM register_missing_rep_indexes(_appContext);
 
   IF _maxBlockLimit IS NOT NULL THEN
     RAISE NOTICE 'Max block limit is specified as: %', _maxBlockLimit;
