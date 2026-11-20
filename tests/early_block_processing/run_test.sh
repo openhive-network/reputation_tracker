@@ -57,5 +57,12 @@ POSTGRES_ACCESS=${POSTGRES_URL:-"postgresql://haf_admin@$POSTGRES_HOST:$POSTGRES
 if [ ! -f "$script_dir/set_version_in_sql.pgsql" ]; then
   "$script_dir/generate_version_sql.sh" "$script_dir/.."
 fi
+# hived fills hafd.operation_types when it starts, before the apps are installed
+psql "$POSTGRES_ACCESS" -v ON_ERROR_STOP=on -X -c "
+INSERT INTO hafd.operation_types( id, name, is_virtual ) VALUES
+    ( 17, 'hive::protocol::delete_comment_operation', FALSE )
+  , ( 61, 'hive::protocol::comment_payout_update_operation', TRUE )
+  , ( 72, 'hive::protocol::effective_comment_vote_operation', TRUE )
+ON CONFLICT DO NOTHING;"
 "$script_dir/install_app.sh" --postgres-url="$POSTGRES_ACCESS"
 psql "$POSTGRES_ACCESS" -v ON_ERROR_STOP=on -X -f "$SCRIPTDIR/early_block_processing.sql"

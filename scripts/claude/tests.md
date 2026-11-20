@@ -122,12 +122,13 @@ Validates shell scripts work correctly.
 
 Simulates in SQL what hived does during a massive sync, on a HAF database that holds no blocks (HAF with `hive.app_context_set_early_block_processing`, haf#379), after a fresh `install_app.sh`:
 
-1. The context is opted in to early block processing at install.
-2. `drop-all` policy: a dump of 250 blocks is not delivered before the index restore.
-3. `keep-monotonic` policy (`hive.disable_indexes_of_irreversible('keep-monotonic')`, sync state `REINDEX`): reptracker processes the dump in `MASSIVE_PROCESSING`, then catches up with hived and processes 5 more blocks in the LIVE stage; its `process_blocks` transactions scan none of `hafd.transactions`, `hafd.transactions_multisig`, `hafd.account_operations` (all of their indexes are deferred), the reputations of the 3 synthetic votes are right, and the initial sync is **not** finished (no freeze requests, no partial index on `hafd.operations`).
-4. HAF restores its indexes: the next LIVE block finishes the initial sync (3 freeze requests, partial index created).
+1. The context is opted in to early block processing at install; on a HAF with `hive.register_op_type_partial_index` (haf#510) the install registers the partial index on `hafd.operations` for the context, without building it.
+2. `drop-all` policy: a dump of 250 blocks is not delivered before the index restore. On a HAF with haf#510 the restore builds the registered index; the test then drops it again (status `missing`), so that the LIVE blocks below meet it registered but not built.
+3. `keep-monotonic` policy (`hive.disable_indexes_of_irreversible('keep-monotonic')`, sync state `REINDEX`): reptracker processes the dump in `MASSIVE_PROCESSING`, then catches up with hived and processes 5 more blocks in the LIVE stage; its `process_blocks` transactions scan none of `hafd.transactions`, `hafd.transactions_multisig`, `hafd.account_operations` (all of their indexes are deferred), call neither `create_rep_indexes()` nor `hive.create_op_type_partial_index()` (`track_functions` counters), the reputations of the 3 synthetic votes are right, and the initial sync is **not** finished (no freeze requests, no partial index on `hafd.operations`).
+4. HAF restores its indexes: the next LIVE block finishes the initial sync (3 freeze requests) and the partial index exists and is valid: built by HAF's restore (status `created`, block processing never called a builder) on a HAF with haf#510, by `create_rep_indexes()` on an older one.
+5. On a HAF with haf#510 only, the test drops the index again (status `missing`, as when hived builds a later registration CONCURRENTLY): the next LIVE block of the ready HAF is processed, calls no index builder and leaves the index missing; `hive.restore_indexes('hafd.operations')`, standing in for hived's indexes controller, then builds it.
 
-**Files:** `run_test.sh` (installs, then runs the SQL), `early_block_processing.sql`. The database is left modified: use a throwaway one. Requires a superuser (`haf_admin`).
+**Files:** `run_test.sh` (fills `hafd.operation_types` as hived does at start, installs, then runs the SQL), `early_block_processing.sql`. The database is left modified: use a throwaway one. Requires a superuser (`haf_admin`).
 
 ## Running Tests Locally
 
