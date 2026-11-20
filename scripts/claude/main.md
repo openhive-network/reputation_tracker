@@ -58,7 +58,7 @@ All operations are normalized to `effective_vote_return` type: `(author, voter, 
 reptracker/
 ├── db/                              # Core SQL implementation
 │   ├── reptracker_app.sql          # HAF context, tables, control functions
-│   ├── process_block_range.sql     # Block processing (7-phase CTE chain)
+│   ├── process_block_range.sql     # Block processing (6-phase CTE chain)
 │   ├── calculate_account_reputations.sql  # Reputation algorithm
 │   └── builtin_roles.sql           # Database roles
 ├── backend/                         # Helper functions

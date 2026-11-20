@@ -32,6 +32,19 @@ DECLARE
   __op_payout INT := reptracker_backend.op_comment_payout_update();   -- Post paid out (votes finalized)
 BEGIN
 
+-- Permlinks seen for the first time go in first, in a statement of their own, so the
+-- CTE chain below finds every permlink of the batch in the table (rows a data-modifying
+-- CTE inserts are not visible to the rest of its statement).
+-- DO NOTHING avoids lock contention on existing permlinks
+INSERT INTO permlinks (permlink)
+SELECT DISTINCT p.permlink
+FROM operations_view ov
+-- Every operation's body carries author and permlink at its top level
+CROSS JOIN LATERAL reptracker_backend.process_deleted_comment_operation(ov.body_value) AS p
+WHERE ov.op_type_id IN (__op_vote, __op_delete, __op_payout)
+  AND ov.block_num BETWEEN _first_block_num AND _last_block_num
+ON CONFLICT (permlink) DO NOTHING;
+
 --=====================================================================================
 -- MAIN CTE CHAIN: Extract, transform, and load vote operations
 --=====================================================================================
@@ -87,93 +100,42 @@ vote_operations_raw AS MATERIALIZED (
 ),
 
 -----------------------------------------------------------------------------------
--- PHASE 2: Resolve account names to IDs (batched for efficiency)
+-- PHASE 2: Resolve account names and permlinks to IDs
 -----------------------------------------------------------------------------------
--- Instead of N correlated subqueries (one per operation), we:
---   1. Collect unique account names
---   2. One index probe per unique name against accounts_view
---   3. Join IDs back to operations
--- This reduces account lookups from O(N*2) to O(unique_accounts)
--- The lateral LIMIT 1 form keeps the lookup an index probe: the HAF context
+-- One index probe per operation against accounts_view and permlinks, instead of a join
+-- of the operations against a dictionary CTE: the operations_view estimate can be 75x
+-- low (a payout wave puts 35k payouts in one batch), and such a join then plans as a
+-- nested loop rescanning the CTE for every operation. A probe is linear in the batch
+-- whatever the estimate.
+-- The lateral LIMIT 1 form keeps each lookup an index probe: the HAF context
 -- view's block_num predicate is badly overestimated, which otherwise makes a
--- plain join plan as a hash join over a seq scan of the whole accounts table.
-
-unique_accounts AS (
-  SELECT DISTINCT name FROM (
-    SELECT author AS name FROM vote_operations_raw
-    UNION ALL
-    SELECT voter FROM vote_operations_raw WHERE voter IS NOT NULL
-  ) accounts
-),
-
-account_ids AS (
-  SELECT ua.name, ha.id
-  FROM unique_accounts ua
-  CROSS JOIN LATERAL (SELECT av.id FROM accounts_view av WHERE av.name = ua.name LIMIT 1) ha
-),
-
--- Reassemble operations with integer IDs instead of text names
+-- plain join plan as a hash join over a seq scan of the whole table.
 vote_operations AS (
   SELECT
     author_acc.id AS author_id,
     voter_acc.id AS voter_id,
-    vo.permlink,
+    pl.permlink_id,
     vo.rshares,
     vo.op_type_id,
     vo.source_op
   FROM vote_operations_raw vo
-  JOIN account_ids author_acc ON author_acc.name = vo.author
+  CROSS JOIN LATERAL (SELECT av.id FROM accounts_view av WHERE av.name = vo.author LIMIT 1) author_acc
   -- LEFT JOIN because delete operations have NULL voter
-  LEFT JOIN account_ids voter_acc ON voter_acc.name = vo.voter
+  LEFT JOIN LATERAL (SELECT av.id FROM accounts_view av WHERE av.name = vo.voter LIMIT 1) voter_acc ON TRUE
+  CROSS JOIN LATERAL (SELECT p.permlink_id FROM permlinks p WHERE p.permlink = vo.permlink LIMIT 1) pl
 ),
 
 -----------------------------------------------------------------------------------
--- PHASE 3: Manage permlink dictionary
------------------------------------------------------------------------------------
--- Permlinks are stored as TEXT but referenced by INT id for efficient joins.
--- Insert any new permlinks we haven't seen before.
-
--- DO NOTHING avoids lock contention on existing permlinks
-insert_new_permlinks AS (
-  INSERT INTO permlinks (permlink)
-  SELECT DISTINCT permlink
-  FROM vote_operations
-  ON CONFLICT (permlink) DO NOTHING
-  RETURNING permlink_id, permlink
-),
-
--- Fetch all permlink IDs needed for this batch (new + existing)
--- UNION ALL ensures insert_new_permlinks CTE executes (CTE is lazy)
--- NOT EXISTS prevents duplicates from newly inserted permlinks
-supplement_permlink_dictionary AS (
-  SELECT permlink_id, permlink FROM insert_new_permlinks
-  UNION ALL
-  SELECT p.permlink_id, p.permlink
-  FROM permlinks p
-  WHERE p.permlink IN (SELECT DISTINCT permlink FROM vote_operations)
-    AND NOT EXISTS (SELECT 1 FROM insert_new_permlinks inp WHERE inp.permlink = p.permlink)
-),
-
--- Join permlink IDs to operations
-prev_votes_in_query AS (
-  SELECT
-    ja.author_id,
-    ja.voter_id,
-    sp.permlink_id,
-    ja.rshares,
-    ja.source_op,
-    ja.op_type_id
-  FROM vote_operations ja
-  JOIN supplement_permlink_dictionary sp ON ja.permlink = sp.permlink
-),
-
------------------------------------------------------------------------------------
--- PHASE 4: Rank operations and find previous votes
+-- PHASE 3: Rank operations and find previous votes
 -----------------------------------------------------------------------------------
 -- When a user changes their vote, we need to:
 --   1. Undo the previous vote's reputation impact
 --   2. Apply the new vote's impact
--- ROW_NUMBER finds the most recent operation per (author, voter, permlink)
+-- ROW_NUMBER finds the most recent operation per (author, voter, permlink), LEAD over
+-- the same window the vote before it within this batch.
+-- Deletes and payouts are matched to votes by window aggregates over (author, permlink)
+-- rather than by joins on source_op ranges, which an underestimated batch plans as
+-- nested loops over CTE scans, quadratic in the batch's operations (see PHASE 2).
 
 ranked_data AS MATERIALIZED (
   SELECT
@@ -184,41 +146,18 @@ ranked_data AS MATERIALIZED (
     source_op,
     op_type_id,
     -- row_num=1 is most recent, row_num=2 is second most recent, etc.
-    ROW_NUMBER() OVER (PARTITION BY author_id, voter_id, permlink_id ORDER BY source_op DESC) AS row_num
-  FROM prev_votes_in_query
-),
-
--- Extract delete/payout operations (used to detect vote cancellations)
-join_permlink_id_to_deletes AS MATERIALIZED (
-  SELECT
-    author_id,
-    permlink_id,
-    source_op,
-    row_num
-  FROM ranked_data
-  WHERE op_type_id != __op_vote
-),
-
--- Self-join to find the previous vote within THIS batch
--- If user voted twice in the same batch, we link them here
-add_prev_votes AS (
-  SELECT
-    current.author_id,
-    current.voter_id,
-    current.permlink_id,
-    current.rshares,
-    current.source_op,
-    previous.rshares AS prev_rshares,       -- Previous vote's rshares (NULL if none in batch)
-    COALESCE(previous.source_op, 0) AS prev_source_op,
-    current.row_num
-  FROM ranked_data current
-  LEFT JOIN ranked_data previous ON
-    current.author_id = previous.author_id AND
-    current.voter_id = previous.voter_id AND
-    current.permlink_id = previous.permlink_id AND
-    current.op_type_id = previous.op_type_id AND
-    current.row_num = previous.row_num - 1  -- Link to next-older vote
-  WHERE current.op_type_id = __op_vote
+    ROW_NUMBER() OVER voter_ops AS row_num,
+    LEAD(rshares) OVER voter_ops AS prev_rshares,       -- NULL if no previous vote in batch
+    COALESCE(LEAD(source_op) OVER voter_ops, 0) AS prev_source_op,
+    -- Latest delete/payout of the post at or before this operation
+    max(source_op) FILTER (WHERE op_type_id != __op_vote) OVER post_ops_so_far AS last_delete_source_op,
+    -- Latest delete/payout of the post in this batch
+    max(source_op) FILTER (WHERE op_type_id != __op_vote) OVER post_ops AS final_delete_source_op
+  FROM vote_operations
+  WINDOW
+    voter_ops AS (PARTITION BY author_id, voter_id, permlink_id ORDER BY source_op DESC),
+    post_ops AS (PARTITION BY author_id, permlink_id),
+    post_ops_so_far AS (PARTITION BY author_id, permlink_id ORDER BY source_op)
 ),
 
 -- If no previous vote in batch, check active_votes table for historical vote
@@ -232,40 +171,26 @@ find_prev_votes_in_table AS (
     COALESCE(q.prev_rshares, av.rshares, 0) AS prev_rshares,
     q.source_op,
     q.prev_source_op,
+    q.last_delete_source_op,
     q.row_num
-  FROM add_prev_votes q
+  FROM ranked_data q
   -- Only lookup if we didn't find prev vote in batch
   LEFT JOIN active_votes av ON
     q.prev_rshares IS NULL AND
     q.author_id = av.author_id AND
     q.voter_id = av.voter_id AND
     q.permlink_id = av.permlink_serial_id
+  WHERE q.op_type_id = __op_vote
 ),
 
 -----------------------------------------------------------------------------------
--- PHASE 5: Handle vote cancellations from delete operations
+-- PHASE 4: Handle vote cancellations from delete operations
 -----------------------------------------------------------------------------------
--- If a post was deleted between the previous vote and current vote,
+-- If a post was deleted (or paid out) between the previous vote and current vote,
 -- the previous vote was already canceled and shouldn't be undone again.
-
--- Find votes that have a delete operation between prev_source_op and source_op
--- Uses batch JOIN instead of per-row EXISTS (N+1 query pattern)
-has_intervening_delete AS (
-  SELECT DISTINCT
-    fpv.author_id,
-    fpv.voter_id,
-    fpv.permlink_id,
-    fpv.source_op
-  FROM find_prev_votes_in_table fpv
-  JOIN join_permlink_id_to_deletes dp ON
-    dp.author_id = fpv.author_id AND
-    dp.permlink_id = fpv.permlink_id AND
-    dp.source_op BETWEEN fpv.prev_source_op AND fpv.source_op
-  WHERE fpv.prev_rshares != 0
-),
-
--- Reset prev_rshares to 0 if there was an intervening delete
--- Uses LEFT ANTI-JOIN pattern: hid.author_id IS NULL means no intervening delete
+-- A delete/payout lies between them when the post's latest one at or before the
+-- current vote is not older than the previous vote (prev_source_op is 0 for a
+-- previous vote from active_votes, so any delete/payout in the batch counts).
 check_if_prev_balances_canceled AS (
   SELECT
     ja.author_id,
@@ -274,48 +199,29 @@ check_if_prev_balances_canceled AS (
     ja.rshares,
     ja.source_op,
     CASE
-      WHEN ja.prev_rshares != 0 AND hid.author_id IS NULL THEN ja.prev_rshares
+      WHEN ja.prev_rshares != 0
+        AND (ja.last_delete_source_op IS NULL OR ja.last_delete_source_op < ja.prev_source_op)
+        THEN ja.prev_rshares
       ELSE 0  -- Delete occurred, previous vote already canceled
     END AS prev_rshares,
     ja.row_num
   FROM find_prev_votes_in_table ja
-  LEFT JOIN has_intervening_delete hid ON
-    hid.author_id = ja.author_id AND
-    hid.voter_id = ja.voter_id AND
-    hid.permlink_id = ja.permlink_id AND
-    hid.source_op = ja.source_op
 ),
 
 -----------------------------------------------------------------------------------
--- PHASE 6: Update active_votes table
+-- PHASE 5: Update active_votes table
 -----------------------------------------------------------------------------------
 
 -- Delete votes for posts that were deleted/paid out
 delete_votes AS (
   DELETE FROM active_votes av
-  USING join_permlink_id_to_deletes dp
+  USING ranked_data dp
   WHERE
     av.author_id = dp.author_id AND
     av.permlink_serial_id = dp.permlink_id AND
+    dp.op_type_id != __op_vote AND
     dp.row_num = 1  -- Only most recent delete matters
   RETURNING av.author_id, av.permlink_serial_id
-),
-
--- Find votes that will be deleted later in this batch (don't bother inserting them)
--- Uses batch JOIN instead of per-row EXISTS
--- IMPORTANT: Must include voter_id because different voters may vote at different times
--- relative to the delete, so each (author, voter, permlink) triple must be checked separately
-votes_with_subsequent_delete AS (
-  SELECT DISTINCT
-    rd.author_id,
-    rd.voter_id,
-    rd.permlink_id
-  FROM ranked_data rd
-  JOIN join_permlink_id_to_deletes dv ON
-    dv.author_id = rd.author_id AND
-    dv.permlink_id = rd.permlink_id AND
-    dv.source_op > rd.source_op  -- Delete happens after this vote
-  WHERE rd.row_num = 1 AND rd.op_type_id = __op_vote
 ),
 
 -- Insert/update votes that should persist (no subsequent delete in batch)
@@ -328,22 +234,18 @@ upsert_votes AS (
     uv.permlink_id,
     uv.rshares
   FROM ranked_data uv
-  -- LEFT ANTI-JOIN: exclude votes with subsequent delete
-  LEFT JOIN votes_with_subsequent_delete vwsd ON
-    vwsd.author_id = uv.author_id AND
-    vwsd.voter_id = uv.voter_id AND
-    vwsd.permlink_id = uv.permlink_id
   WHERE
     uv.row_num = 1 AND              -- Only most recent vote per (author, voter, permlink)
     uv.op_type_id = __op_vote AND   -- Only actual votes, not deletes
-    vwsd.author_id IS NULL          -- No subsequent delete
+    -- No subsequent delete/payout in this batch (it would remove the vote again)
+    (uv.final_delete_source_op IS NULL OR uv.final_delete_source_op < uv.source_op)
   ON CONFLICT ON CONSTRAINT pk_active_votes DO UPDATE SET
     rshares = EXCLUDED.rshares
   RETURNING av.author_id, av.voter_id, av.permlink_serial_id
 ),
 
 -----------------------------------------------------------------------------------
--- PHASE 7: Collect reputation changes, in blockchain order, for the batch calculation
+-- PHASE 6: Collect reputation changes, in blockchain order, for the batch calculation
 -----------------------------------------------------------------------------------
 votes_to_process AS (
   SELECT
